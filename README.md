@@ -36,19 +36,31 @@ export EPS_API_KEY=...   EPS_SERIAL=00:14:2D:A8:B1:42
 
 ### Usage
 
-```bash
-eps temp                       # water temperature
-eps status                     # deck + lamp status
-eps deck open                  # open the deck (close to retract)
-eps lamp on                    # switch the lamp on (off to switch off)
+**Working now** (reading + discovery):
 
-eps get realtimedata           # discovery: dump raw JSON of any resource
+```bash
+eps get realtimedata           # dump raw JSON of any resource (discovery)
 eps get status --print-url     # show the URL only (api_key masked), no call
-eps deck open --dry-run        # show the request body without sending it
+eps temp                       # water temperature*
+eps status                     # deck + lamp status*
 ```
 
-> The deck and lamp are physical actuators. Write commands ask for confirmation
-> (use `-y/--yes` to skip) and support `--dry-run` to preview the request first.
+\* Until the [discovery step](#discovery-step-one-time) is done, `eps temp` and
+`eps status` print the raw JSON plus a hint — the exact field still has to be
+mapped.
+
+**Available after step 2** (once the deck/lamp fields are mapped):
+
+```bash
+eps deck open                  # open the deck (close to retract)
+eps lamp on                    # switch the lamp on (off to switch off)
+eps deck open --dry-run        # preview the request body without sending it
+```
+
+> The deck and lamp are physical actuators, so these write commands will ask for
+> confirmation (use `-y/--yes` to skip) and support `--dry-run` to preview the
+> request first. Until step 2 lands they return a clear "not mapped yet" message
+> rather than acting.
 
 ### Discovery step (one-time)
 
