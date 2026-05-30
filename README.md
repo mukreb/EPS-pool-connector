@@ -3,6 +3,72 @@
 Connector and documentation for **EPS NEXUS** based **Europe Pool Supply (EPS)**
 swimming pools, using the PoolBuilder / SmartPoolControl Public API.
 
+The connector starts as a small command-line tool (`eps`) to **read the water
+temperature** and (once the API fields are mapped) **open/close the deck** and
+**switch the lamp on/off**. The reusable client library (`src/eps_pool/client.py`)
+is kept separate from the CLI so it can later back a web UI, Home Assistant, or
+MQTT integration.
+
+## Command-line tool
+
+### Install
+
+```bash
+python3 -m pip install -e .          # add ".[dev]" to also get pytest
+```
+
+This installs the `eps` command (you can also run `python -m eps_pool`).
+
+### Configure
+
+Credentials are read from environment variables (or a local `.env` file — copy
+`.env.example` to `.env`; it is gitignored and never committed):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `EPS_API_KEY` | yes | API key (request via support@epsbv.eu) |
+| `EPS_SERIAL`  | yes | Pool serial number, e.g. `00:14:2D:A8:B1:42` |
+| `EPS_BASE_URL`| no  | Override the API base URL (defaults to the public one) |
+
+```bash
+export EPS_API_KEY=...   EPS_SERIAL=00:14:2D:A8:B1:42
+```
+
+### Usage
+
+```bash
+eps temp                       # water temperature
+eps status                     # deck + lamp status
+eps deck open                  # open the deck (close to retract)
+eps lamp on                    # switch the lamp on (off to switch off)
+
+eps get realtimedata           # discovery: dump raw JSON of any resource
+eps get status --print-url     # show the URL only (api_key masked), no call
+eps deck open --dry-run        # show the request body without sending it
+```
+
+> The deck and lamp are physical actuators. Write commands ask for confirmation
+> (use `-y/--yes` to skip) and support `--dry-run` to preview the request first.
+
+### Discovery step (one-time)
+
+The API docs do **not** list the JSON field names, so we map them from a live
+response. Run the two commands below and share the output; the field names then
+get wired into `src/eps_pool/client.py` (`WATER_TEMP_FIELD`, `DECK_FIELD`,
+`LAMP_FIELD`), which activates `eps temp`, `eps status`, `eps deck` and
+`eps lamp`.
+
+```bash
+eps get realtimedata           # → locate the water-temperature field
+eps get status                 # → locate the deck + lamp fields
+```
+
+### Tests
+
+```bash
+python3 -m pytest
+```
+
 ## Documentation
 
 The full API documentation (converted from the *EPS NEXUS Handleiding*,
