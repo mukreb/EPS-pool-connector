@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.homeybuild/
+env.json
