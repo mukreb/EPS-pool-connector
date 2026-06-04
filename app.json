@@ -116,7 +116,7 @@
         {
           "id": "list_pools",
           "template": "list_devices",
-          "navigation": { "prev": "enter_credentials" }
+          "navigation": { "prev": "enter_credentials", "next": "add_devices" }
         },
         {
           "id": "add_devices",
