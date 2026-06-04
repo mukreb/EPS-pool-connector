@@ -1,0 +1,25 @@
+{
+  "name": "com.mukreb.smartpoolconnect",
+  "version": "0.1.0",
+  "description": "Homey app for reading live status from a SmartPoolConnect pool.",
+  "main": "app.js",
+  "scripts": {
+    "validate": "homey app validate --level publish",
+    "run": "homey app run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mukreb/eps-pool-connector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mukreb/eps-pool-connector/issues"
+  },
+  "homepage": "https://github.com/mukreb/eps-pool-connector#readme",
+  "devDependencies": {
+    "homey": "^2.0.0"
+  }
+}
