@@ -3,8 +3,14 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
 
-const COVER_IDLE_CLOSED = 2;
-const COVER_MOVING = new Set([3, 4, 5]);
+// Gemeten op 13-09-2026; deze codes staan niet in de API-documentatie.
+const COVER_STATES = new Map([
+  [1, 'open'],
+  [2, 'closed'],
+  [3, 'opening'],
+  [4, 'closing'],
+  [5, 'stopped'],
+]);
 
 class PoolDevice extends Homey.Device {
   async onInit() {
@@ -68,8 +74,13 @@ class PoolDevice extends Homey.Device {
     const ambient = pool?.temperature?.metrics?.ambient_temp;
     const ph = pool?.ph?.metrics?.actual;
     const cl = pool?.cl?.metrics?.actual;
-    const pumpStatus = pool?.filter?.status?.pump_status;
-    const lighting = pool?.lighting?.status?.status;
+    // filter.metrics.pump_speed en pump_current stonden in elke meting op 0, ook
+    // terwijl filter.status meldde dat de pomp op schema 3 draaide. Die velden lijken
+    // op deze installatie niet gevuld te worden, dus komt de pompstand uit status.
+    // Dat blok is een pool-brede momentopname die alleen bij gebeurtenissen ververst
+    // en dus kan achterlopen; een betere bron is er voorlopig niet.
+    const pumpSpeed = pool?.filter?.status?.pump_speed;
+    const lighting = pool?.lighting?.config?.always_active;
     const cover = pool?.cover?.status?.status;
 
     await this._setIfNumber('measure_temperature', water);
@@ -77,11 +88,11 @@ class PoolDevice extends Homey.Device {
     await this._setIfNumber('measure_ph', ph);
     await this._setIfNumber('measure_chlorine', cl);
 
-    if (typeof pumpStatus === 'number') {
-      await this.setCapabilityValue('filter_running', pumpStatus > 0).catch(this.error);
+    if (typeof pumpSpeed === 'number') {
+      await this.setCapabilityValue('filter_running', pumpSpeed > 0).catch(this.error);
     }
-    if (typeof lighting === 'number') {
-      await this.setCapabilityValue('lighting_on', lighting === 1).catch(this.error);
+    if (typeof lighting === 'boolean') {
+      await this.setCapabilityValue('lighting_on', lighting).catch(this.error);
     }
     await this.setCapabilityValue('cover_state', this._mapCover(cover)).catch(this.error);
   }
@@ -92,9 +103,7 @@ class PoolDevice extends Homey.Device {
   }
 
   _mapCover(raw) {
-    if (raw === COVER_IDLE_CLOSED) return 'closed';
-    if (typeof raw === 'number' && COVER_MOVING.has(raw)) return 'moving';
-    return 'unknown';
+    return COVER_STATES.get(raw) || 'unknown';
   }
 
   _handleError(err) {

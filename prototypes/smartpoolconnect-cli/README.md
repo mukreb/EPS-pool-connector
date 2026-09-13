@@ -35,17 +35,50 @@ Daarna werken `python3 pool_test.py status`, `python3 pool_test.py open`, `pytho
 
 De API ondersteunt ook een OAuth access token. Met `python3 pool_test.py status --token` kun je dat verborgen invoeren; het script slaat het niet op. Hetzelfde werkt voor `open --token`, `stop --token` en `close --token`. Voer alleen het access token in, zonder `Bearer ` ervoor. Optioneel kun je zelf `SPC_ACCESS_TOKEN=...` in `.env` zetten; dit heeft voorrang op API-keys. Een verlopen token moet worden vervangen; automatisch vernieuwen zit niet in dit testscript.
 
-Op 7 september 2026 is via de ingelogde website vastgesteld dat dit zwembad online is en v2 gebruikt. De browser leest via websessie-endpoints op `www.smartpoolconnect.eu`. Daarna is met expliciete toestemming een directe `GET /pool/{pid}` op `api.smartpoolconnect.eu` uitgevoerd met het OAuth Bearer-token uit de browsersessie: HTTP 200, zwembad online. Het token is niet op schijf opgeslagen. Er zijn geen bewegingscommando's verstuurd; schrijfrechten en fysieke uitvoering zijn dus nog niet getest.
+Op 7 september 2026 is via de ingelogde website vastgesteld dat dit zwembad online is en v2 gebruikt. De browser leest via websessie-endpoints op `www.smartpoolconnect.eu`. Daarna is met expliciete toestemming een directe `GET /pool/{pid}` op `api.smartpoolconnect.eu` uitgevoerd met het OAuth Bearer-token uit de browsersessie: HTTP 200, zwembad online. Het token is niet op schijf opgeslagen.
+
+Inmiddels zijn ook bewegingscommando's verstuurd: met `open` en `close` is de afdekking daadwerkelijk opengegaan en weer dichtgegaan, via `POST /pool/{pid}/cmd/cover_open` en `cover_close` met datzelfde OAuth Bearer-token. Schrijfrechten en fysieke uitvoering zijn daarmee bevestigd voor de afdekking. De overige commando's (`backwash`, `shock_start`/`shock_stop`, `lighting_next`/`lighting_reset`) en de configuratie-endpoints (`PATCH /pool/{pid}/…`) zijn nog niet getest. Er is nog geen `spc_…`-API-key ontvangen, dus deze bevestiging geldt voor het tokenpad; een API-key is niet apart beproefd.
 
 ## Commando's
 
 ```bash
 python3 pool_test.py status
+python3 pool_test.py raw
+python3 pool_test.py config filter
+python3 pool_test.py light on
+python3 pool_test.py light off
 python3 pool_test.py open --dry-run
 python3 pool_test.py open
 python3 pool_test.py stop
 python3 pool_test.py close
 ```
+
+`status` toont bewust maar een handvol velden (`pid`, `name`, `version`, `status`, `activity_at`, `cover`). Gebruik `raw` voor het volledige, ongefilterde antwoord van `GET /pool/{pid}` — daar staan ook de modules `ph`, `cl`, `temperature`, `filter` en `lighting` in.
+
+### Wachten op het effect: `--watch`
+
+Een commando wordt pas bij de volgende synchronisatie verwerkt. Gemeten duurt dat **20 tot 30 seconden**, dus een `status` direct na een commando toont nog de oude toestand. Plak commando's daarom niet als één blok in je terminal.
+
+Met `--watch` doet het script het wachten voor je: het leest de module vóór het commando, verstuurt het, en pollt daarna elke 5 seconden, met een melding bij elke wijziging. Ctrl+C stopt het zodra je genoeg gezien hebt.
+
+Het vergelijkt `status` én `config`, en dat is nodig. Het `status`-blok is een pool-brede momentopname die alleen bij bepaalde gebeurtenissen ververst en uren oud kan zijn; `config` verandert direct na een `PATCH`. Bij het aanzetten van de verlichting bleef `status` onveranderd terwijl `config.always_active` meteen omsprong — wie alleen naar `status` kijkt, concludeert ten onrechte dat er niets gebeurd is. `metrics` blijft buiten de vergelijking, want daar tikt de tijdstempel continu door.
+
+```bash
+python3 pool_test.py light on --watch
+python3 pool_test.py open --watch
+```
+
+Bij de afdekking zie je meerdere overgangen. Daarom stopt het volgen niet bij de eerste wijziging. Standaard pollt het 420 seconden, want een afdekking doet er meerdere minuten over; met `--watch-timeout` stel je dat bij.
+
+Houd er rekening mee dat het `status`-blok alleen bij gebeurtenissen ververst. Een afdekking kan dus al helemaal open staan terwijl de API nog `3` (aan het openen) meldt; lees in dat geval later nog eens met `status` of `raw`.
+
+`light on` en `light off` schakelen de verlichting via `PATCH /pool/{pid}/lighting` met `{"always_active": true|false}`. Dit is de eerste schrijfactie in dit script die een body verstuurt. De documentatie staat voor dít endpoint expliciet een kale aan/uit-body toe; andere modules eisen het volledige configuratie-object, dus kopieer deze aanpak niet zomaar naar `filter` of `spec`. Met `--dry-run` zie je de body zonder iets te versturen. Let op: `always_active: false` geeft de besturing terug aan een eventueel ingesteld tijdschema; staat dat uit, dan gaat het licht uit.
+
+`config <module>` haalt de configuratie van één module op via `GET /pool/{pid}/{module}`, bijvoorbeeld `config filter`, `config cover`, `config lighting` of `config spec`. Dat is de manier om de veldnamen te zien die je nodig hebt voor een `PATCH`: die vervangt het hele object, dus je moet elk veld terugsturen.
+
+Bij gebruik van een token of sessiecookie probeert het script de vervaldatum af te drukken, gelezen uit het `exp`-veld van de JWT-payload. **Bij het token van SmartPoolConnect lukt dat niet**: dat is geen standaard JWT en bevat geen leesbaar `exp`-veld, dus je krijgt de melding dat de vervaldatum niet leesbaar is. De geldigheidsduur is daarmee niet te voorspellen — reken erop dat het token een keer zonder waarschuwing ongeldig wordt. Een `spc_…`-API-key is volgens de documentatie een jaar geldig en daarmee wél voorspelbaar.
+
+> **Let op bij het delen van uitvoer.** `raw` en `config` bevatten gegevens die je waarschijnlijk niet publiek wilt hebben: het pool-UUID, het MAC-adres en de GPS-coördinaten van de installatie. Deel bij het melden van een probleem alleen de veldnamen of vervang de waarden.
 
 `open` opent de afdekking; `close` sluit die. Voer bewegingen uit terwijl je zicht op het zwembad hebt en niemand in het water is. `stop` loopt ook via de cloud en is dus geen directe noodstop; houd de lokale bediening beschikbaar.
 
@@ -65,6 +98,30 @@ Een SmartPoolConnect-key is aan te vragen via api-support@smartpoolconnect.eu. V
 
 Deze test gebruikt de nieuwe API op `https://api.smartpoolconnect.eu`, met `X-API-Key` en een lege `POST /pool/{pid}/cmd/cover_open`, `cover_stop` of `cover_close`. De bestaande `eps`-connector gebruikt de oudere SmartPoolControl-API.
 
-Volgens de aangeleverde JSON/PDF werken deze commando's voor hardware v1/v2; v3 geeft `Unsupported version`. HTTP 200 betekent dat het commando in de wachtrij staat. Pas na synchronisatie kan de afdekking bewegen. Controleer de beweging zelf en lees daarna `status` opnieuw. De status wordt onbewerkt getoond: de documentatie specificeert hier geen betrouwbare vertaling van alle afdekstatuscodes. Een geslaagde test bewijst alleen deze lees- en afdekfuncties, niet de volledige API.
+Volgens de aangeleverde JSON/PDF werken deze commando's voor hardware v1/v2; v3 geeft `Unsupported version`. HTTP 200 betekent dat het commando in de wachtrij staat. Pas na synchronisatie kan de afdekking bewegen. Controleer de beweging zelf en lees daarna `status` opnieuw. Een geslaagde test bewijst alleen deze lees- en afdekfuncties, niet de volledige API.
+
+### `status` is pool-breed en kan uren oud zijn
+
+In het volledige antwoord dragen alle `status`-blokken exact dezelfde tijdstempel, en alle `metrics`-blokken eveneens. Het zijn dus niet tien losse tijdstempels maar twee. Gemeten op 13 september 2026 was `metrics` actueel tot op de seconde terwijl de hele `status`-sectie 137 minuten oud was: die meldde een pomp op hoog voor de verwarming, terwijl `metrics` 0 toeren en 0,0 A gaf.
+
+Lees meetwaarden dus uit `metrics`, ingestelde toestand uit `config`, en gebruik `status` alleen waar er geen alternatief is — in de praktijk de afdekstand. Juist bij het bewegen van de afdekking ververst `status` wel.
+
+### Gemeten afdekstatuscodes
+
+De documentatie vertaalt de codes in `cover.status.status` niet. Op 13 september 2026 zijn ze vastgesteld door de afdekking te laten bewegen en er status bij uit te lezen:
+
+| Code | Betekenis |
+|---|---|
+| 1 | Volledig open |
+| 2 | Dicht |
+| 3 | Aan het openen |
+| 4 | Aan het sluiten |
+| 5 | Gestopt in tussenstand |
+
+De afdekking doet er ongeveer 180 seconden over, zowel openen als sluiten (fysiek nagemeten). Reken bij `--watch` dus op minuten.
+
+Let op: de tijd tussen twee `status.timestamp`-waarden is géén looptijd. Het status-blok ververst alleen bij gebeurtenissen, dus de tijdstempel van de eindstand kan later liggen dan het moment waarop de afdekking klaar was. Zo leek openen 363 seconden te duren en sluiten 173, terwijl beide in werkelijkheid rond de 180 liggen. Om dezelfde reden kan een al geopende afdekking nog een tijd als `3` gerapporteerd blijven.
+
+Reken op **20 tot 30 seconden** tussen het versturen van een commando en het moment dat de nieuwe status zichtbaar is. Gebruik `cover.status.timestamp` om te zien of het zwembad echt iets nieuws gemeld heeft: dat veld verspringt pas bij een echte statuswijziging, terwijl `activity_at` bij vrijwel elk verzoek meebeweegt.
 
 Bij een timeout wordt niet automatisch opnieuw verstuurd: het commando kan al ontvangen zijn. HTTP 401 wijst op authenticatie; HTTP 403 op toegang/scopes; HTTP 429 op de verzoeklimiet.

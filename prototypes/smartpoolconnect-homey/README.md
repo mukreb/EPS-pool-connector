@@ -9,10 +9,11 @@ in [Homey](https://homey.app). Exposes one device per pool with sensors for
 water and ambient temperature, pH, chlorine, filter pump, lighting and deck
 cover.
 
-**Status: v0.1.0 — read-only.** Controlling lighting and the deck cover is not
-yet possible because the corresponding endpoints currently require a
-web-session cookie rather than the official API key. See
-[Why no write actions yet?](#why-no-write-actions-yet) below.
+**Status: v0.1.0 — read-only.** This app does not yet control lighting or the
+deck cover, but that is a gap in this prototype, not in the API. See
+[Why no write actions yet?](#why-no-write-actions-yet) below, and
+[the Homey app proposal](../../docs/homey-app-voorstel.md) for the planned
+design.
 
 ## What you get
 
@@ -22,9 +23,30 @@ web-session cookie rather than the official API key. See
 | Ambient temperature (°C) | `temperature.metrics.ambient_temp` |
 | pH | `ph.metrics.actual` |
 | Chlorine (mV) | `cl.metrics.actual` |
-| Filter pump (on/off) | `filter.status.pump_status > 0` |
-| Lighting (on/off) | `lighting.status.status === 1` |
-| Deck cover (closed / moving / unknown) | `cover.status.status` |
+| Filter pump (on/off) | `filter.status.pump_speed` |
+| Lighting (on/off) | `lighting.config.always_active` |
+| Deck cover (open / closed / opening / closing / stopped) | `cover.status.status` |
+
+Prefer `metrics` for measurements and `config` for settings. The `status`
+section is a single pool-wide snapshot shared by every module that only
+refreshes when the pool reports an event, and it was measured at over two hours
+stale, so it is the last resort rather than the default.
+
+It is still the only source for two things. The cover position has no
+alternative, and does refresh while the cover moves. And the filter pump state
+has to come from `filter.status.pump_speed`, because
+`filter.metrics.pump_speed` and `pump_current` read 0 in every sample taken —
+including while `filter.status` reported the pump running on schedule 3 — so
+those fields appear not to be populated on this installation.
+
+The cover status codes are not documented by the API. They were measured on
+13-09-2026 by moving the cover and reading `cover.status.status`: `1` open,
+`2` closed, `3` opening, `4` closing, `5` stopped part-way.
+
+The cover takes about 180 seconds to travel end to end, in either direction.
+Note that `cover.status` only refreshes when the pool reports an event, so a
+cover that has finished opening can still read as `opening` for a while, and the
+gap between two status timestamps is an upper bound rather than a travel time.
 
 Polling interval is configurable per device (15–300 s, default 30 s).
 At default settings the app makes ~2 requests per minute, well under the
@@ -70,20 +92,33 @@ Press `Ctrl+C` to stop. For permanent installation, use `homey app install`.
 
 ## Why no write actions yet?
 
-The official, documented API (`api.smartpoolconnect.eu` with `X-API-Key`)
-returns *read* data including lighting status and cover state, but does not
-expose endpoints to control lighting or the deck cover. Those actions live
-on `www.smartpoolconnect.eu` as
-`POST /api/cmd/{pid}/cover_{open,stop,close}` and
-`PATCH /pool/{pid}/lighting.data`, and currently authenticate via a
-web-session cookie rather than the API key. Using a captured cookie works
-but breaks every time the session expires.
+**This section is outdated.** It was written before the SmartPoolConnect API
+documentation covering commands became available, and claimed that control
+actions only existed on `www.smartpoolconnect.eu` behind a web-session cookie.
+That is not the case: the official API exposes them on
+`api.smartpoolconnect.eu` with `X-API-Key`, namely
 
-This app deliberately uses only the official API key route so it stays
-honest and stable. Once SmartPoolConnect ships per-endpoint enforcement for
-API keys (their docs mention this is in progress) we will add lighting
-and cover control in a follow-up release. If you would like to see this
-sooner, drop a note to `api-support@smartpoolconnect.eu`.
+- `POST /pool/{pid}/cmd/{command}` — `cover_open`, `cover_stop`, `cover_close`,
+  `backwash`, `shock_start`, `shock_stop`, `lighting_next`, `lighting_reset`;
+- `PATCH /pool/{pid}/lighting` with `{"always_active": true|false}` for
+  lighting on/off (it is a setting, not a command);
+- `PATCH /pool/{pid}/spec` with `{"pause": true|false}` to pause the controller;
+- `PATCH /pool/{pid}/filter` for pump speed and schedules.
+
+The [`smartpoolconnect-cli`](../smartpoolconnect-cli/) prototype already uses
+that route successfully — the deck cover has actually been opened and closed
+through `POST /pool/{pid}/cmd/cover_open|cover_close`. What is missing here is
+the implementation, not the API.
+
+Note that those successful calls used an OAuth token taken from a browser
+session, because no `spc_…` API key has been issued yet. A token works, but it
+expires; a Homey app runs unattended and cannot ask for a fresh one. The
+proposal therefore supports both credential types plus a repair flow, and an
+API key with `pools:read` and `controls:write` is still worth requesting via
+`api-support@smartpoolconnect.eu`.
+
+See [the Homey app proposal](../../docs/homey-app-voorstel.md) for how the
+read and control features are planned to fit together.
 
 ## Development
 

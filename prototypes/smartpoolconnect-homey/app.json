@@ -70,8 +70,11 @@
       "setable": false,
       "uiComponent": "sensor",
       "values": [
+        { "id": "open", "title": { "en": "Open", "nl": "Open" } },
         { "id": "closed", "title": { "en": "Closed", "nl": "Dicht" } },
-        { "id": "moving", "title": { "en": "Moving", "nl": "Beweegt" } },
+        { "id": "opening", "title": { "en": "Opening", "nl": "Gaat open" } },
+        { "id": "closing", "title": { "en": "Closing", "nl": "Gaat dicht" } },
+        { "id": "stopped", "title": { "en": "Stopped", "nl": "Gestopt" } },
         { "id": "unknown", "title": { "en": "Unknown", "nl": "Onbekend" } }
       ]
     }
