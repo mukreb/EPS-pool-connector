@@ -1,0 +1,152 @@
+{
+  "id": "com.mukreb.smartpoolconnect",
+  "version": "0.1.0",
+  "compatibility": ">=10.0.0",
+  "sdk": 3,
+  "platforms": ["local"],
+  "name": {
+    "en": "Smart Pool Connect",
+    "nl": "Smart Pool Connect"
+  },
+  "description": {
+    "en": "Read live status from your SmartPoolConnect pool (water and ambient temperature, pH, chlorine, filter, lighting, and deck cover).",
+    "nl": "Lees live status van je SmartPoolConnect zwembad (water- en luchttemperatuur, pH, chloor, filter, verlichting en afdekking)."
+  },
+  "category": ["climate"],
+  "permissions": [],
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "mukreb"
+  },
+  "brandColor": "#0099CC",
+  "source": "https://github.com/mukreb/eps-pool-connector",
+  "bugs": {
+    "url": "https://github.com/mukreb/eps-pool-connector/issues"
+  },
+  "capabilities": {
+    "measure_ph": {
+      "type": "number",
+      "title": { "en": "pH", "nl": "pH" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "decimals": 2
+    },
+    "measure_chlorine": {
+      "type": "number",
+      "title": { "en": "Chlorine", "nl": "Chloor" },
+      "units": { "en": "mV", "nl": "mV" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "decimals": 0
+    },
+    "filter_running": {
+      "type": "boolean",
+      "title": { "en": "Filter pump", "nl": "Filterpomp" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insightsTitleTrue": { "en": "Running", "nl": "Draait" },
+      "insightsTitleFalse": { "en": "Stopped", "nl": "Stilstand" }
+    },
+    "lighting_on": {
+      "type": "boolean",
+      "title": { "en": "Lighting", "nl": "Verlichting" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insightsTitleTrue": { "en": "On", "nl": "Aan" },
+      "insightsTitleFalse": { "en": "Off", "nl": "Uit" }
+    },
+    "cover_state": {
+      "type": "enum",
+      "title": { "en": "Deck cover", "nl": "Afdekking" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "values": [
+        { "id": "closed", "title": { "en": "Closed", "nl": "Dicht" } },
+        { "id": "moving", "title": { "en": "Moving", "nl": "Beweegt" } },
+        { "id": "unknown", "title": { "en": "Unknown", "nl": "Onbekend" } }
+      ]
+    }
+  },
+  "drivers": [
+    {
+      "id": "pool",
+      "name": {
+        "en": "Pool",
+        "nl": "Zwembad"
+      },
+      "class": "sensor",
+      "capabilities": [
+        "measure_temperature",
+        "measure_temperature.ambient",
+        "measure_ph",
+        "measure_chlorine",
+        "filter_running",
+        "lighting_on",
+        "cover_state"
+      ],
+      "capabilitiesOptions": {
+        "measure_temperature": {
+          "title": { "en": "Water temperature", "nl": "Watertemperatuur" }
+        },
+        "measure_temperature.ambient": {
+          "title": { "en": "Ambient temperature", "nl": "Luchttemperatuur" }
+        }
+      },
+      "platforms": ["local"],
+      "connectivity": ["cloud"],
+      "images": {
+        "small": "/drivers/pool/assets/images/small.png",
+        "large": "/drivers/pool/assets/images/large.png",
+        "xlarge": "/drivers/pool/assets/images/xlarge.png"
+      },
+      "pair": [
+        {
+          "id": "enter_credentials",
+          "navigation": { "next": "list_pools" }
+        },
+        {
+          "id": "list_pools",
+          "template": "list_devices",
+          "navigation": { "prev": "enter_credentials", "next": "add_devices" }
+        },
+        {
+          "id": "add_devices",
+          "template": "add_devices"
+        }
+      ],
+      "settings": [
+        {
+          "id": "poll_interval",
+          "type": "number",
+          "label": { "en": "Poll interval (seconds)", "nl": "Polling interval (seconden)" },
+          "value": 30,
+          "min": 15,
+          "max": 300,
+          "hint": {
+            "en": "How often to fetch the pool status. The API allows ~60 requests/minute per key.",
+            "nl": "Hoe vaak de zwembadstatus opgehaald wordt. De API staat ~60 verzoeken/minuut per key toe."
+          }
+        },
+        {
+          "id": "base_url",
+          "type": "text",
+          "label": { "en": "API base URL", "nl": "API basis URL" },
+          "value": "https://api.smartpoolconnect.eu",
+          "hint": {
+            "en": "Only change this if SmartPoolConnect tells you to.",
+            "nl": "Alleen wijzigen als SmartPoolConnect dat aangeeft."
+          }
+        }
+      ]
+    }
+  ]
+}

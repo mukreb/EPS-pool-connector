@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-homey:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Athom CLI
+        run: npm install -g homey
+
+      - name: Validate Homey app manifest
+        working-directory: prototypes/smartpoolconnect-homey
+        run: homey app validate --level publish
+
+  validate-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile SmartPoolConnect CLI
+        run: python -m py_compile prototypes/smartpoolconnect-cli/pool_test.py
+
+      - name: Test legacy SmartPoolControl prototype
+        working-directory: prototypes/smartpoolcontrol-python
+        run: |
+          python -m pip install -e '.[dev]'
+          python -m pytest -q

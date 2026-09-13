@@ -56,12 +56,15 @@ class NoRedirect(HTTPRedirectHandler):
 
 def settings():
     values = {}
-    path = Path(__file__).with_name(".env")
-    if path.exists():
-        for line in path.read_text().splitlines():
+    script_dir = Path(__file__).resolve().parent
+    paths = (script_dir / ".env", script_dir.parents[1] / ".env", Path.cwd() / ".env")
+    for path in dict.fromkeys(paths):
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
             if "=" in line and not line.lstrip().startswith("#"):
                 key, value = line.split("=", 1)
-                values[key.strip()] = value.strip().strip("\"'")
+                values.setdefault(key.strip(), value.strip().strip("\"'"))
     values.update(os.environ)
     return values
 
@@ -96,7 +99,7 @@ def request(method, path, key, *, bearer=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["list", "status", *COMMANDS])
-    parser.add_argument("--pid", help="Pool UUID; anders zoeken op EPS_SERIAL/SPC_MAC")
+    parser.add_argument("--pid", help="Pool UUID; anders zoeken op SPC_MAC/EPS_SERIAL")
     parser.add_argument("--dry-run", action="store_true", help="Wel uitlezen, geen commando sturen")
     auth = parser.add_mutually_exclusive_group()
     auth.add_argument("--token", action="store_true", help="Vraag een Bearer-token verborgen op (niet opslaan)")

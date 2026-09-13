@@ -1,118 +1,37 @@
-# EPS-pool-connector
+# EPS pool integration prototypes
 
-Connector and documentation for **EPS NEXUS** based **Europe Pool Supply (EPS)**
-swimming pools, using the PoolBuilder / SmartPoolControl Public API.
+This repository collects small experiments for reading and controlling an EPS
+swimming-pool installation. It is a prototype archive, not a finished product.
 
-## SmartPoolConnect cover test
+The pool supplier migrated this installation around April 2026 from the old
+**SmartPoolControl** platform to **SmartPoolConnect**. The two platforms use
+different APIs and authentication methods, so their code is kept separate.
 
-For the current SmartPoolConnect platform, use [`pool_test.py`](pool_test.py).
-It reads the current pool and sends the documented `cover_open`, `cover_stop`
-and `cover_close` commands through `https://api.smartpoolconnect.eu`. It accepts
-either a SmartPoolConnect API key or the access token contained in an active
-`connect_session` cookie. See [`POOL-TEST.md`](POOL-TEST.md) for setup, usage and
-safety notes.
+## Repository layout
 
-The `src/eps_pool` package and the documentation under `docs/` describe the
-older SmartPoolControl Public API. They remain in this repository as historical
-reference and are separate from the working SmartPoolConnect test script.
+| Path | Platform | Purpose | Status |
+|---|---|---|---|
+| [`prototypes/smartpoolconnect-cli/`](prototypes/smartpoolconnect-cli/) | SmartPoolConnect | Minimal Python test for status and deck open/stop/close | Current experiment; status/authentication tested |
+| [`prototypes/smartpoolconnect-homey/`](prototypes/smartpoolconnect-homey/) | SmartPoolConnect | Homey app exposing pool sensor data | Read-only prototype |
+| [`prototypes/smartpoolcontrol-python/`](prototypes/smartpoolcontrol-python/) | SmartPoolControl | Python CLI and converted legacy documentation | Historical; old platform no longer used |
+| [`reference/smartpoolconnect/`](reference/smartpoolconnect/) | SmartPoolConnect | Supplied API reference PDF | Reference material |
 
-The connector starts as a small command-line tool (`eps`) to **read the water
-temperature** and (once the API fields are mapped) **open/close the deck** and
-**switch the lamp on/off**. The reusable client library (`src/eps_pool/client.py`)
-is kept separate from the CLI so it can later back a web UI, Home Assistant, or
-MQTT integration.
+## Start here
 
-## Command-line tool
+For the current platform, read the
+[SmartPoolConnect CLI instructions](prototypes/smartpoolconnect-cli/README.md).
+The test script accepts a dedicated API key, an OAuth access token, or the
+`connect_session` cookie from an active browser login.
 
-### Install
+Never commit `.env` files, API keys, access tokens or session cookies. The root
+`.gitignore` and the prototype-specific ignore files exclude these credentials.
 
-```bash
-python3 -m pip install -e .          # add ".[dev]" to also get pytest
-```
+## History
 
-This installs the `eps` command (you can also run `python -m eps_pool`).
+The former Claude branches and the Codex test branch have been merged into the
+history of `main`. Their final states remain available as branches, while this
+structure brings the useful files together without mixing the two platforms.
 
-### Configure
+## License
 
-Credentials are read from environment variables (or a local `.env` file — copy
-`.env.example` to `.env`; it is gitignored and never committed):
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `EPS_API_KEY` | yes | API key (request via support@epsbv.eu) |
-| `EPS_SERIAL`  | yes | Pool serial number, e.g. `00:14:2D:A8:B1:42` |
-| `EPS_BASE_URL`| no  | Override the API base URL (defaults to the public one) |
-
-```bash
-export EPS_API_KEY=...   EPS_SERIAL=00:14:2D:A8:B1:42
-```
-
-### Usage
-
-**Working now** (reading + discovery):
-
-```bash
-eps get realtimedata           # dump raw JSON of any resource (discovery)
-eps get status --print-url     # show the URL only (api_key masked), no call
-eps temp                       # water temperature*
-eps status                     # deck + lamp status*
-```
-
-\* Until the [discovery step](#discovery-step-one-time) is done, `eps temp` and
-`eps status` print the raw JSON plus a hint — the exact field still has to be
-mapped.
-
-**Available after step 2** (once the deck/lamp fields are mapped):
-
-```bash
-eps deck open                  # open the deck (close to retract)
-eps lamp on                    # switch the lamp on (off to switch off)
-eps deck open --dry-run        # preview the request body without sending it
-```
-
-> The deck and lamp are physical actuators, so these write commands will ask for
-> confirmation (use `-y/--yes` to skip) and support `--dry-run` to preview the
-> request first. Until step 2 lands they return a clear "not mapped yet" message
-> rather than acting.
-
-### Discovery step (one-time)
-
-The API docs do **not** list the JSON field names, so we map them from a live
-response. Run the two commands below and share the output; the field names then
-get wired into `src/eps_pool/client.py` (`WATER_TEMP_FIELD`, `DECK_FIELD`,
-`LAMP_FIELD`), which activates `eps temp`, `eps status`, `eps deck` and
-`eps lamp`.
-
-```bash
-eps get realtimedata           # → locate the water-temperature field
-eps get status                 # → locate the deck + lamp fields
-```
-
-### Tests
-
-```bash
-python3 -m pytest
-```
-
-## Documentation
-
-The full API documentation (converted from the *EPS NEXUS Handleiding*,
-chapter 9 *API koppeling*) lives in the [`docs/`](docs/) folder:
-
-- [Documentation index](docs/README.md)
-- [9.1 Introduction](docs/01-introduction.md)
-- [9.2 API endpoints overview](docs/02-api-endpoints-overview.md)
-- [9.2.1 Realtime data](docs/03-realtime-data.md)
-- [9.2.2 Historical data](docs/04-historical-data.md)
-- [9.3 Configuration](docs/05-configuration.md)
-- [9.4 Status](docs/06-status.md)
-- [9.5 Settings](docs/07-settings.md)
-- [9.6 / 9.7 Using the API & conclusion](docs/08-using-the-api.md)
-
-## API at a glance
-
-- **Base URL:** `https://api.Smartpoolcontrol.eu/publicapi/`
-- **Authentication:** `api_key` query parameter (request one via
-  [support@epsbv.eu](mailto:support@epsbv.eu)) or a logged-in poolbuilder session.
-- **Resources:** `realtimedata`, `historicaldata`, `configuration`, `status`,
-  `settings`.
+MIT - see [`LICENSE`](LICENSE).

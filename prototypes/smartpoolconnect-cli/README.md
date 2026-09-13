@@ -1,6 +1,7 @@
-# Kleine test voor de zwembadafdekking
+# SmartPoolConnect CLI-prototype
 
-Start een terminal in deze projectmap. Geen installatie of extra Python-pakketten nodig.
+Dit is het actuele experiment voor het nieuwe SmartPoolConnect-platform. Start
+een terminal in deze map; er zijn geen extra Python-pakketten nodig.
 
 ## Test met je SmartPoolConnect-login
 
@@ -48,7 +49,11 @@ python3 pool_test.py close
 
 `open` opent de afdekking; `close` sluit die. Voer bewegingen uit terwijl je zicht op het zwembad hebt en niemand in het water is. `stop` loopt ook via de cloud en is dus geen directe noodstop; houd de lokale bediening beschikbaar.
 
-Het script leest `.env` naast het script. Je bestaande `EPS_SERIAL` wordt gebruikt om via het MAC-adres precies één pool UUID op te zoeken. Je bestaande `EPS_API_KEY` wordt geprobeerd, maar de oude SmartPoolControl-key werkt mogelijk niet op SmartPoolConnect. Zet dan een nieuwe sleutel in `.env`:
+Het script leest eerst `.env` naast het script en daarna ook `.env` in de hoofdmap
+van de repository. `SPC_MAC` of de bestaande `EPS_SERIAL` wordt gebruikt om via
+het MAC-adres precies één pool UUID op te zoeken. De oude SmartPoolControl-key
+werkt niet op SmartPoolConnect. Gebruik voor de nieuwe omgeving een sessiecookie,
+toegangstoken of nieuwe API-key:
 
 ```dotenv
 SPC_API_KEY=spc_jouw_sleutel

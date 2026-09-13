@@ -19,3 +19,9 @@ lib/
 pyvenv.cfg
 .venv/
 venv/
+
+# Node / Homey
+node_modules/
+.homeybuild/
+env.json
+*.log
