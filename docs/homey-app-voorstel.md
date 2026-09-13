@@ -35,15 +35,16 @@ route uit dit voorstel werkt — niet alleen op papier:
   weer gesloten. Daarmee is de hele bedieningskant van dit voorstel geen aanname meer.
 - **De afdekstatuscodes zijn gemeten** door tijdens die beweging status uit te lezen,
   zie [§2.5](#statuscodes-van-de-afdekking--gemeten-niet-gedocumenteerd).
-- **Een commando doet er 20 tot 30 seconden over** voordat het in de status zichtbaar
-  is. Dat is bepalend voor hoe de app na een commando moet verversen.
-- **De eerste `PATCH` is geslaagd.** `PATCH /pool/{pid}/lighting` met
-  `{"always_active": true}` zette de verlichting daadwerkelijk aan, bevestigd in de
-  mobiele app van de leverancier. Belangrijk detail: de overige velden van die module
-  (`dimming`, `switch_pulse`, `cover_disabled`, `schedule`) bleven ongemoeid. Voor dit
-  endpoint is de kale aan/uit-body dus een echte tweede variant en geen vervanging van
-  het hele object — precies zoals de documentatie beschrijft, en anders dan bij
-  `filter`.
+- **Twee verschillende vertragingen**, en dat verschil is bepalend voor de app: een
+  `POST /cmd/*` doet er 20 tot 30 seconden over, een `PATCH` op een module is binnen
+  10 seconden zichtbaar. Zie [§3.3](#33-hoe-lang-duurt-het-voordat-een-wijziging-zichtbaar-is).
+- **De `PATCH`-route is heen en terug getest.** `PATCH /pool/{pid}/lighting` met
+  `{"always_active": true}` en daarna `false` zette de verlichting aan en weer uit;
+  de app van de leverancier toonde het licht als aan. Beide keren bleven de overige
+  velden van die module (`dimming`, `switch_pulse`, `cover_disabled`, `schedule`)
+  ongemoeid. Voor dit endpoint is de kale aan/uit-body dus een echte tweede variant en
+  geen vervanging van het hele object — precies zoals de documentatie beschrijft, en
+  anders dan bij `filter`.
 - **`status` blijkt een pool-brede momentopname** die uren oud kan zijn, terwijl
   `metrics` en `config` live zijn. Zie
   [§2.3](#status-is-een-pool-brede-momentopname-en-kan-uren-oud-zijn) — dit raakt
@@ -397,6 +398,36 @@ Twee dingen die de documentatie nadrukkelijk waarschuwt en die makkelijk fout ga
 - **`PATCH /cover` beweegt de afdekking niet.** Dat endpoint configureert alleen
   hoe de pomp op de afdekking reageert. Bewegen gaat via `cmd/cover_*`.
 
+### 3.3 Hoe lang duurt het voordat een wijziging zichtbaar is
+
+De twee soorten bediening hebben een duidelijk verschillende vertraging. Gemeten:
+
+| Soort | Endpoint | Zichtbaar na | Waar |
+|---|---|---|---|
+| Momentaan commando | `POST /pool/{pid}/cmd/*` | 20–30 s | `cover.status` |
+| Instelling | `PATCH /pool/{pid}/{module}` | < 10 s | `config` |
+
+Dat verschil is geen toeval. Een `PATCH` schrijft naar de configuratie in de cloud en
+is daar meteen terug te lezen. Een `cmd/*` moet wachten tot het zwembad zelf
+synchroniseert — de documentatie zegt letterlijk dat het commando "op de volgende
+sync" wordt toegepast, en `cmd/cover_stop` bleek pas na ruim 30 seconden zichtbaar,
+`cmd/cover_close` na ruim 23.
+
+**Belangrijk onderscheid:** dat `config` de nieuwe waarde teruggeeft, bewijst dat de
+cloud de wijziging heeft geaccepteerd — niet dat het zwembad hem al heeft uitgevoerd.
+Voor de verlichting vielen die twee praktisch samen, maar de app moet niet doen alsof
+een teruggelezen `config` hetzelfde is als fysieke bevestiging. Bij de afdekking is
+dat verschil expliciet: HTTP 200 betekent alleen "in de wachtrij".
+
+Waar de app op moet wachten verschilt dus per geval:
+
+- **Afdekking**: tot `cover.status.timestamp` verspringt. Bij beweging ververst de
+  `status`-sectie wél, dus dat is een bruikbaar signaal.
+- **`PATCH`-instellingen**: tot `config` de nieuwe waarde toont. Wachten op `status`
+  werkt hier niet — bij het omzetten van de verlichting bleef dat blok ruim twee uur
+  onveranderd, terwijl `config.always_active` binnen 10 seconden meebewoog. Een app
+  die hier op `status` wacht, wacht eeuwig en meldt ten onrechte een mislukking.
+
 ---
 
 ## 4. Voorgestelde app-structuur
@@ -507,22 +538,11 @@ Budget bij het standaardinterval van 30 s: 2 verzoeken/minuut van de 60. Ruim
 voldoende marge voor commando's en voor de `GET`-helft van elke read-modify-write.
 
 Na elk verstuurd commando verfrist de poller een paar keer extra in plaats van één
-keer. Uit de metingen blijkt namelijk dat een commando er **20 tot 30 seconden** over
-doet voordat het in de status zichtbaar is — `cmd/cover_stop` werd pas ruim 30
-seconden later zichtbaar, `cmd/cover_close` na ruim 23 seconden. Dat past bij wat de
-documentatie zegt: het zwembad voert het commando uit "bij de volgende synchronisatie".
-
-Eén verfrissing na 10 seconden zou de oude waarde teruglezen en de tegel laten
-terugklappen. Beter is een reeks op ongeveer 5, 15, 30 en 45 seconden.
-
-Waar je op wacht verschilt per soort commando, en dat is geen detail:
-
-- **Afdekking** (`cmd/cover_*`): wachten tot `cover.status.timestamp` verspringt. Bij
-  beweging ververst de `status`-sectie wél, dus dat werkt.
-- **Verlichting en andere `PATCH`-instellingen**: wachten op `config`, niet op
-  `status`. Bij het omzetten van het licht bleef `status` ruim twee uur onveranderd,
-  terwijl `config.always_active` meteen meebewoog. Een app die hier op `status` wacht,
-  wacht eeuwig en concludeert ten onrechte dat het commando mislukt is.
+keer, en hoe lang dat duurt hangt af van het soort commando — zie
+[§3.3](#33-hoe-lang-duurt-het-voordat-een-wijziging-zichtbaar-is). Kort: na een
+`PATCH` volstaat een verfrissing na een paar seconden tegen `config`, na een
+`POST /cmd/*` is een reeks op ongeveer 10, 20, 30 en 45 seconden tegen
+`cover.status.timestamp` nodig.
 
 ### 4.4 Capability-overzicht per device
 
