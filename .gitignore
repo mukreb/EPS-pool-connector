@@ -1,5 +1,8 @@
-# Secrets — never commit
+# Secrets - never commit
 .env
+
+# macOS
+.DS_Store
 
 # Python
 __pycache__/
@@ -9,6 +12,10 @@ build/
 dist/
 .pytest_cache/
 
-# Virtualenvs
+# This checkout currently also contains a local virtualenv at its root.
+bin/
+include/
+lib/
+pyvenv.cfg
 .venv/
 venv/

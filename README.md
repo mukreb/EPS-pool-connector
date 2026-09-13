@@ -3,6 +3,19 @@
 Connector and documentation for **EPS NEXUS** based **Europe Pool Supply (EPS)**
 swimming pools, using the PoolBuilder / SmartPoolControl Public API.
 
+## SmartPoolConnect cover test
+
+For the current SmartPoolConnect platform, use [`pool_test.py`](pool_test.py).
+It reads the current pool and sends the documented `cover_open`, `cover_stop`
+and `cover_close` commands through `https://api.smartpoolconnect.eu`. It accepts
+either a SmartPoolConnect API key or the access token contained in an active
+`connect_session` cookie. See [`POOL-TEST.md`](POOL-TEST.md) for setup, usage and
+safety notes.
+
+The `src/eps_pool` package and the documentation under `docs/` describe the
+older SmartPoolControl Public API. They remain in this repository as historical
+reference and are separate from the working SmartPoolConnect test script.
+
 The connector starts as a small command-line tool (`eps`) to **read the water
 temperature** and (once the API fields are mapped) **open/close the deck** and
 **switch the lamp on/off**. The reusable client library (`src/eps_pool/client.py`)
