@@ -45,6 +45,8 @@ Inmiddels zijn ook bewegingscommando's verstuurd: met `open` en `close` is de af
 python3 pool_test.py status
 python3 pool_test.py raw
 python3 pool_test.py config filter
+python3 pool_test.py light on
+python3 pool_test.py light off
 python3 pool_test.py open --dry-run
 python3 pool_test.py open
 python3 pool_test.py stop
@@ -57,7 +59,7 @@ python3 pool_test.py close
 
 `config <module>` haalt de configuratie van één module op via `GET /pool/{pid}/{module}`, bijvoorbeeld `config filter`, `config cover`, `config lighting` of `config spec`. Dat is de manier om de veldnamen te zien die je nodig hebt voor een `PATCH`: die vervangt het hele object, dus je moet elk veld terugsturen.
 
-Bij gebruik van een token of sessiecookie drukt het script de vervaldatum van het token af (het `exp`-veld uit de JWT-payload). Zo weet je hoe lang de sessie nog bruikbaar is in plaats van te moeten afwachten.
+Bij gebruik van een token of sessiecookie probeert het script de vervaldatum af te drukken, gelezen uit het `exp`-veld van de JWT-payload. **Bij het token van SmartPoolConnect lukt dat niet**: dat is geen standaard JWT en bevat geen leesbaar `exp`-veld, dus je krijgt de melding dat de vervaldatum niet leesbaar is. De geldigheidsduur is daarmee niet te voorspellen — reken erop dat het token een keer zonder waarschuwing ongeldig wordt. Een `spc_…`-API-key is volgens de documentatie een jaar geldig en daarmee wél voorspelbaar.
 
 > **Let op bij het delen van uitvoer.** `raw` en `config` bevatten gegevens die je waarschijnlijk niet publiek wilt hebben: het pool-UUID, het MAC-adres en de GPS-coördinaten van de installatie. Deel bij het melden van een probleem alleen de veldnamen of vervang de waarden.
 
