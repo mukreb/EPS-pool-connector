@@ -212,6 +212,35 @@ Twee dingen die de documentatie nadrukkelijk waarschuwt en die makkelijk fout ga
 
 ## 4. Voorgestelde app-structuur
 
+### 4.0 Wat draait waar — je hoeft niets te hosten
+
+Een Homey-app draait op de Homey Pro zelf. Er komt geen server, VPS, container of
+cloudfunctie aan te pas, en er hoeft niets inkomend bereikbaar te zijn: geen open
+poort, geen domeinnaam, geen certificaat.
+
+```
+Homey Pro  ──HTTPS (uitgaand)──►  api.smartpoolconnect.eu  ──►  zwembadkast
+ (deze app)                         (van de leverancier)
+```
+
+Het credential staat in de device-store van de Homey. Wat je nodig hebt:
+
+- **Een Homey Pro.** Eigen apps draaien alleen op Pro — niet op Homey Cloud of Bridge.
+- **Een computer met Node.js en de Athom CLI**, uitsluitend om de app te bouwen en
+  naar de Homey te sturen. Dat is een handeling per update, geen draaiend proces.
+
+Let op het verschil tussen de twee CLI-commando's: `homey app run` is
+ontwikkelmodus en leeft zolang je terminal openstaat, terwijl `homey app install` de
+app permanent op de Homey zet — daarna mag de computer uit en blijft alles draaien.
+Publiceren in de Homey App Store kan later, maar is niet nodig; sideloaden werkt
+net zo goed.
+
+**Waar de app wél van afhankelijk is, is de cloud van de leverancier.** De kast host
+geen lokale API — de documentatie stelt expliciet dat er geen endpoint op het
+IP-adres van het zwembad zit en dat de kast alleen uitgaand naar de cloud stuurt.
+Zonder internet, of bij een storing bij SmartPoolConnect, werkt de app dus niet. Dat
+is inherent aan het platform en niet iets dat met zelf hosten te omzeilen is.
+
 ### 4.1 Drie devices per zwembad, één API-verbinding
 
 Alles in één device stoppen kán, maar dan is het licht geen echt Homey-licht (geen
