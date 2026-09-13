@@ -4,11 +4,25 @@ Dit document beschrijft hoe een volwaardige Homey-app voor het zwembad eruit kan
 zien: welke waarden uitleesbaar zijn, welke bediening mogelijk is, en hoe dat het
 beste op Homey-begrippen (devices, capabilities, flow-kaarten) te mappen valt.
 
-Het is een **ontwerpvoorstel**, geen implementatie. Basis is de aangeleverde
+Het is een **ontwerpvoorstel plus bouwopdracht**. Basis is de aangeleverde
 [SmartPoolConnect API-documentatie](../reference/smartpoolconnect/SmartPoolConnect%20API%20Docs.pdf)
-(v1.0.0, OpenAPI 3.1.0) plus wat er al staat in
+(v1.0.0, OpenAPI 3.1.0), gecorrigeerd met wat op 13 september 2026 tegen de echte
+installatie is gemeten, plus wat er al staat in
 [`prototypes/smartpoolconnect-homey/`](../prototypes/smartpoolconnect-homey/) en
 [`prototypes/smartpoolconnect-cli/`](../prototypes/smartpoolconnect-cli/).
+
+## Hoe dit document te lezen
+
+| Je wilt… | Ga naar |
+|---|---|
+| **de app bouwen** | [§10 Bouwopdracht](#10-bouwopdracht) — bestandsindeling, contracten, capabilitylijst, acceptatiecriteria |
+| weten *waarom* iets zo moet | §1 t/m §9 hieronder |
+| de API zelf gebruiken | de [SmartPoolConnect Field Guide](https://claude.ai/code/artifact/691db840-cd7c-413d-a94e-73a610aba723) — alle correcties op de officiële documentatie op één pagina |
+
+> ⚠️ **De officiële documentatie bevat aantoonbare fouten.** Twee daarvan breken stil,
+> zonder foutmelding: `pump_speed` is in de configuratie een tekst en niet het getal
+> dat de PDF noemt, en de meegeleverde droogloopformule kan op deze installatie nooit
+> afgaan. Volg bij twijfel de veldgids, niet de PDF.
 
 ---
 
@@ -781,38 +795,48 @@ als tokens worden uit foutmeldingen gefilterd.
 
 ## 7. Open punten
 
-Dingen die uitgezocht moeten worden. Geen ervan blokkeert de bouw nog — lezen én
-bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-praktisch-bewezen-is)).
+Alles wat gemeten kon worden, is gemeten. Wat resteert blokkeert de bouw niet.
 
-1. **De `spc_…`-API-key is nog niet ontvangen.** Aan te vragen via
-   `api-support@smartpoolconnect.eu`, met `pools:read` en `controls:write`,
-   gekoppeld aan dit zwembad. Tot die er is werkt het OAuth-token,
-   maar dat is een tijdelijke oplossing — vandaar de dubbele ondersteuning en de
-   repair-flow uit [§4.2](#42-authenticatie-twee-methoden-naast-elkaar).
-2. ~~Hoe lang is het huidige token geldig?~~ **Niet vast te stellen.** Het token is
-   geen standaard JWT en draagt geen leesbaar `exp`-veld, dus de vervaldatum is niet
-   te voorspellen. Dat is zelf het antwoord: bouw op de repair-flow en vraag de key aan.
-3. ~~Statuscodes van de afdekking zijn niet gedocumenteerd.~~ **Volledig opgelost**:
-   `1` open, `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand.
-4. **Wat betekent `lighting.status.status`? Onbekend, en in elk geval niet aan/uit.**
-   Een meetreeks met verse tijdstempels gaf de waarden `0`, `1` en `2`, waarbij `2`
-   zowel voorkwam met het licht uit als met het licht aan, en `0` eveneens in beide
-   gevallen. Er is dus geen aan/uit-betekenis uit af te leiden. Mogelijk hangt het
-   samen met de pulsschakeling (`switch_pulse: 250` op een enkelkleurige lamp), maar
-   dat is speculatie. **`config.always_active` is de bron** voor aan/uit; die beweegt
-   binnen 10 seconden mee en klopte in beide richtingen.
-5. ~~Het `FilterConfig`-schema is niet uitgeschreven in de PDF.~~ **Opgehaald**, zie
-   [§3.2](#het-filterconfig-schema--en-een-fout-in-de-documentatie). Belangrijkste
-   vondst: `pump_speed` is daar een tekst (`"low"`, `"medium"`, …), niet het getal dat
-   de documentatie noemt.
-6. ~~Sondetype onbekend.~~ **Redox (mV)**, geen CLM: `spec.clm_sensor` staat op
-   `false`. De ppm-capability vervalt voor deze installatie.
-8. **Wat is `covco`?** Dat veld staat naast `status` in `cover.status` en bleef op `0`
-   staan, ook met een commando in de wachtrij. Het is dus geen echo van het laatste
-   commando. Onbekend, en voorlopig niet nodig.
-7. **Eerste `PATCH` testen met zicht op het zwembad.** De momentane commando's zijn
-   getest, de configuratie-endpoints nog niet. Begin daar met `lighting`
-   (onschadelijk en direct zichtbaar), niet met `filter` of `spec`.
+### Te regelen
+
+**De `spc_…`-API-key is nog niet ontvangen.** Aan te vragen via
+`api-support@smartpoolconnect.eu`, met `pools:read` en `controls:write`, gekoppeld aan
+dit zwembad. Tot die er is werkt het OAuth-token uit de browsersessie, maar dat is een
+tijdelijke oplossing: het token is geen standaard JWT, draagt geen leesbaar
+`exp`-veld, en de vervaldatum is dus niet te voorspellen. Vandaar de dubbele
+ondersteuning en de repair-flow uit
+[§4.2](#42-authenticatie-twee-methoden-naast-elkaar). Een API-key is volgens de
+documentatie een jaar geldig.
+
+### Tijdens het bouwen bevestigen
+
+**Wordt `filter.metrics` ooit gevuld?** Op deze installatie stond het in elke meting op
+nul, ook terwijl de pomp volgens `status` draaide — vandaar de feature-detectie in
+[§10.4](#104-libmappingjs--de-regels-die-geld-kosten-als-je-ze-fout-doet). Eén meting
+op een moment dat de filterpomp hoorbaar draait, geeft uitsluitsel. Blijft
+`pump_current` dan 0,0, dan is het veld niet aangesloten en klopt de terugval.
+
+### Onbekend, maar niet nodig
+
+**`lighting.status.status`** neemt de waarden `0`, `1` en `2` aan, waarbij `2` zowel
+voorkwam met het licht uit als aan, en `0` eveneens in beide gevallen. Er is geen
+aan/uit-betekenis uit af te leiden; mogelijk hangt het samen met de pulsschakeling
+(`switch_pulse: 250` op een enkelkleurige lamp), maar dat is speculatie.
+`config.always_active` is de bron en klopte in beide richtingen.
+
+**`covco`** staat naast `status` in `cover.status` en bleef in elke meting op `0`, ook
+met een commando in de wachtrij. Het is dus geen echo van het laatste commando.
+
+### Opgelost
+
+| Vraag | Antwoord |
+|---|---|
+| Afdekstatuscodes | `1` open, `2` dicht, `3` openen, `4` sluiten, `5` gestopt |
+| `FilterConfig`-schema | opgehaald; `pump_speed` is een **tekst**, geen getal |
+| Sondetype | redox in mV; `spec.clm_sensor` is `false`, dus geen ppm |
+| Werkt `PATCH`? | ja, heen en terug getest op de verlichting |
+| Geldigheid token | niet vast te stellen — geen leesbaar `exp` |
+| Looptijd afdekking | ± 180 s, beide richtingen |
 
 ---
 
@@ -865,3 +889,185 @@ de open punten uit §7 te beantwoorden (ruwe afdekstatus uitlezen in elke stand,
 eerst een Homey-app te hoeven bouwen. Het zou daarvoor twee kleine uitbreidingen
 kunnen gebruiken: een `config <module>`-commando dat een module-config ruw afdrukt,
 en het tonen van de `exp`-datum van het gebruikte token.
+
+---
+
+## 10. Bouwopdracht
+
+Dit hoofdstuk is wat iemand nodig heeft om te beginnen. De hoofdstukken hierboven
+leggen uit waarom de keuzes zo liggen; hier staat wat er gemaakt moet worden.
+
+### 10.1 Bestandsindeling
+
+```
+app.json                      Manifest: capabilities, drivers, flow-kaarten
+app.js                        Houdt de PoolPoller-registry bij
+lib/api.js                    API-client: auth, rate limit, lezen en schrijven
+lib/poller.js                 Eén gedeelde poll per pool-UUID
+lib/mapping.js                Codes → capabilitywaarden, spec → capabilitylijst
+drivers/pool/driver.js        Pair-flow; maakt alle drie de devices aan
+drivers/pool/device.js        Meetwaarden, alarmen, pompbediening
+drivers/cover/device.js       windowcoverings_state
+drivers/light/device.js       onoff
+drivers/*/pair/*.html         Credentialkeuze → zwembadlijst
+drivers/*/repair/*.html       Nieuw token of key invoeren bij 401
+locales/en.json, locales/nl.json
+```
+
+Plain JavaScript, geen buildstap — zoals het bestaande prototype.
+
+### 10.2 `lib/api.js` — contract
+
+```js
+new SmartPoolConnectClient({ credential: { type: 'key' | 'token', value }, baseUrl })
+
+listPools()                        // GET /pool           → items[]
+getPool(pid)                       // GET /pool/{pid}     → volledige modules
+getModule(pid, module)             // GET /pool/{pid}/{m} → { config, status, metrics }
+patchModule(pid, module, config)   // PATCH, volledig config-object op topniveau
+setLighting(pid, on)               // PATCH /lighting met { always_active }
+sendCommand(pid, command)          // POST /pool/{pid}/cmd/{command}, geen body
+```
+
+Eisen aan de implementatie:
+
+- **Eén `authHeader()`** die op basis van `credential.type` `X-API-Key` of
+  `Authorization: Bearer` zet. De rest van de client kent het verschil niet.
+- **`patchModule` verpakt niet.** `getModule` geeft `{config, status, metrics}`; de
+  `PATCH`-body is het kale `config`-object. Een helper
+  `readModifyWrite(pid, module, changes)` doet `GET` → samenvoegen → `PATCH` en is de
+  enige manier waarop de rest van de app configuratie schrijft.
+- **`setLighting` is de uitzondering** en stuurt bewust alleen `{always_active}`.
+  Documenteer dat in de code, want het ziet eruit als een fout.
+- **Rate limit**: bij `429` of `X-RateLimit-Remaining: 0` wachten tot
+  `X-RateLimit-Reset` voor het volgende verzoek.
+- **Nooit het credential loggen**, ook niet in foutmeldingen. Filter de waarde uit
+  response-bodies voordat die in een `Error` terechtkomt.
+- **Geen automatische herhaling na een timeout op een commando.** Het kan al
+  ontvangen zijn.
+
+### 10.3 `lib/poller.js` — contract
+
+```js
+poller = getPoller(homey, pid, client)
+poller.subscribe(device)            // device.onPoolData(pool) bij elke ronde
+poller.setInterval(seconds)         // 15–300, standaard 30
+poller.refreshAfter('patch')        // extra ronden op 3, 6 en 10 s
+poller.refreshAfter('command')      // extra ronden op 10, 20, 30 en 45 s
+```
+
+Eén `GET /pool/{pid}` per ronde bedient alle drie de devices. Bij 30 s is dat 2 van de
+60 toegestane verzoeken per minuut.
+
+De twee verversingsprofielen zijn niet willekeurig: een `PATCH` is binnen 10 seconden
+terug te lezen in `config`, een commando heeft 20 tot 30 seconden nodig. Zie
+[§3.3](#33-hoe-lang-duurt-het-voordat-een-wijziging-zichtbaar-is).
+
+Bij `501` op `GET /pool/{pid}` terugvallen op de status uit `GET /pool` in plaats van
+het device op onbeschikbaar te zetten — dat is een v1-zwembad.
+
+### 10.4 `lib/mapping.js` — de regels die geld kosten als je ze fout doet
+
+```js
+COVER = { 1: 'open', 2: 'closed', 3: 'opening', 4: 'closing', 5: 'stopped' }
+// alles anders → 'unknown'
+
+lightingOn(pool)   = pool.lighting.config.always_active          // niet status
+waterTemp(pool)    = pool.temperature.metrics.water_temp         // niet main_temp
+redox(pool)        = pool.cl.metrics.actual                      // mV, is geen chloor
+```
+
+**Pompstand.** `filter.metrics.pump_speed` en `pump_current` stonden op deze
+installatie in elke meting op 0, ook terwijl de pomp volgens `status` draaide. Doe
+daarom feature-detectie in plaats van één bron hard te kiezen:
+
+```js
+// Onthoud per zwembad of metrics ooit van nul afweek.
+if (metricsEverNonZero) return metrics.pump_speed > 0;
+return status.pump_speed > 0;        // terugval, kan achterlopen
+```
+
+**Capabilities aanmaken uit `spec`**, niet uit "is dit veld gevuld":
+
+| Capability | Alleen als |
+|---|---|
+| `measure_chlorine` (ppm) | `spec.clm_sensor === true` |
+| `button.next_colour` | `spec.lighting_type !== 'single'` |
+| `measure_water_level` | `spec.wl_sensor === true` |
+| `alarm_dryrun` | `spec.flow_alarm === true` |
+| cover-device | `spec.deck_enabled === true` |
+| light-device | `spec.lighting_enabled === true` |
+| `button.backwash` | `spec.backwash_enabled === true` |
+
+### 10.5 Capabilities — klaar voor `app.json`
+
+**Device „Zwembad"** · class `sensor`
+
+| ID | Type | Eenheid | Setable | Bron |
+|---|---|---|---|---|
+| `measure_temperature` | number | °C | nee | `temperature.metrics.water_temp` |
+| `measure_temperature.ambient` | number | °C | nee | `temperature.metrics.ambient_temp` |
+| `target_temperature` | number | °C | ja | `temperature.config.target` |
+| `measure_ph` | number | pH | nee | `ph.metrics.actual` |
+| `measure_redox` | number | mV | nee | `cl.metrics.actual` |
+| `measure_chlorine` | number | ppm | nee | `cl.metrics.clm` |
+| `measure_water_level` | number | cm | nee | `level.metrics.value` |
+| `filter_running` | boolean | — | nee | zie §10.4 |
+| `filter_status` | enum (16) | — | nee | `filter.status.pump_status` |
+| `filter_speed` | enum | — | ja | `filter.config` via read-modify-write |
+| `alarm_dryrun` | boolean | — | nee | afgeleid, zie §2.4 |
+| `alarm_fault` | boolean | — | nee | `pump_status` 12 of 15 |
+| `onoff.pause` | boolean | — | ja | `spec.pause` |
+| `onoff.shock` | boolean | — | ja | `cmd/shock_start`, `shock_stop` |
+| `button.backwash` | boolean | — | ja | `cmd/backwash` |
+
+**Device „Afdekking"** · class `windowcoverings` · `windowcoverings_state`
+→ `up` = `cmd/cover_open`, `idle` = `cmd/cover_stop`, `down` = `cmd/cover_close`.
+Géén `windowcoverings_set`: de API geeft geen standpercentage.
+
+**Device „Zwembadverlichting"** · class `light` · `onoff` → `setLighting()`.
+
+`filter_speed` schrijft `"off"`, `"low"`, `"medium"`, `"high"`, `"max"` — **tekst, geen
+getal**, zie [§3.2](#het-filterconfig-schema--en-een-fout-in-de-documentatie).
+
+### 10.6 Acceptatiecriteria per fase
+
+**Fase 1 — lezen** *(geen schrijfrechten nodig)*
+
+- Alle meetwaarden uit §10.5 verschijnen, en capabilities die `spec` uitsluit worden
+  niet aangemaakt.
+- `homey app validate --level publish` slaagt.
+- Eén `GET` per pollronde, aantoonbaar in de log — niet drie.
+- Een zwembad dat `501` geeft, blijft beschikbaar met de status uit de lijst.
+- Een ongeldig credential zet het device op onbeschikbaar met een leesbare melding, en
+  de sleutel staat nergens in de log.
+
+**Fase 2 — commando's**
+
+- Afdekking open, stop en dicht werken; de tegel volgt binnen een minuut.
+- Bediening staat standaard uit achter de device-instelling en de flow-acties zijn dan
+  geblokkeerd.
+- Een afdekking die volledig open is toont `open`, niet blijvend `opening`.
+- Na een commando wordt niet automatisch opnieuw verstuurd bij een timeout.
+
+**Fase 3 — configuratie**
+
+- Licht aan/uit via `setLighting`; de andere lichtvelden blijven aantoonbaar ongemoeid.
+- Filtersnelheid instellen stuurt de tekstwaarde en alle drie de schema's mee.
+- Pauzeren en hervatten werkt via `spec`.
+
+**Fase 4 — afronding**
+
+- Nederlandse en Engelse teksten compleet.
+- Flow-kaarten uit §5 aanwezig met tokens.
+- App-store-materiaal en CI groen.
+
+### 10.7 Testen zonder zwembad
+
+De installatie hoeft niet vrij te zijn om te ontwikkelen. Leg met
+`pool_test.py raw > sample.json` een echt antwoord vast en voed dat aan de
+mappinglaag. Juist de lastige gevallen zijn zo te dekken: een bevroren `status`-sectie,
+`filter.metrics` op nul, een afdekking die nog `opening` meldt terwijl hij al open is,
+en een `spec` waarin `clm_sensor` en `lighting_type` variëren.
+
+Bewegingscommando's alleen uitvoeren met zicht op het zwembad en niemand in het water.
