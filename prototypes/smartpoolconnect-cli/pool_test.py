@@ -101,7 +101,7 @@ def snapshot(api, key, path, module):
     return before
 
 
-def watch_module(api, key, path, module, before, timeout=180, interval=10):
+def watch_module(api, key, path, module, before, timeout=420, interval=10):
     """Volg het statusblok van een module en meld elke wijziging.
 
     Commando's worden pas bij de volgende synchronisatie verwerkt, dus reken op
@@ -135,6 +135,10 @@ def watch_module(api, key, path, module, before, timeout=180, interval=10):
     if changes == 0:
         print("Geen wijziging gezien. Het commando kan alsnog verwerkt worden; "
               "lees later opnieuw status.")
+    else:
+        print(f"Gestopt na {changes} wijziging(en). Het status-blok ververst alleen "
+              f"bij gebeurtenissen, dus een eindstand kan later komen: lees zo nodig "
+              f"opnieuw met 'status' of 'raw'.")
     return current
 
 
@@ -201,6 +205,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Wel uitlezen, geen commando sturen")
     parser.add_argument("--watch", action="store_true",
                         help="Na het commando pollen tot de status verandert")
+    parser.add_argument("--watch-timeout", type=int, default=420, metavar="S",
+                        help="Hoe lang --watch blijft pollen (standaard 420s; "
+                             "een afdekking doet er meerdere minuten over)")
     auth = parser.add_mutually_exclusive_group()
     auth.add_argument("--token", action="store_true", help="Vraag een Bearer-token verborgen op (niet opslaan)")
     auth.add_argument("--cookie", action="store_true", help="Plak connect_session verborgen; haal het toegangstoken eruit (niet opslaan)")
@@ -275,7 +282,7 @@ def main():
         api("PATCH", path + "/lighting", key, body=body)
         print("Verlichting aangepast.")
         if args.watch:
-            watch_module(api, key, path, "lighting", before)
+            watch_module(api, key, path, "lighting", before, timeout=args.watch_timeout)
         else:
             print("Lees over ~30s status of config lighting opnieuw; de wijziging "
                   "wordt pas bij de volgende synchronisatie zichtbaar.")
@@ -292,7 +299,7 @@ def main():
     print("Commando geaccepteerd/in wachtrij; dit bewijst nog niet dat de afdekking beweegt.")
     print("Controleer fysiek bij het zwembad. Verwerking volgt bij de volgende synchronisatie.")
     if args.watch:
-        watch_module(api, key, pool_path, "cover", before)
+        watch_module(api, key, pool_path, "cover", before, timeout=args.watch_timeout)
 
 
 if __name__ == "__main__":

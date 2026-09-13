@@ -49,6 +49,9 @@ route uit dit voorstel werkt — niet alleen op papier:
   `metrics` en `config` live zijn. Zie
   [§2.3](#status-is-een-pool-brede-momentopname-en-kan-uren-oud-zijn) — dit raakt
   elke module en corrigeert een eerdere aanname in dit voorstel.
+- **De pompstatuscodes uit de documentatie kloppen.** Toen de afdekking openging
+  sprong `filter.status.pump_status` naar `11` (Afdekking), precies zoals de tabel
+  voorspelt. Tot dan was alleen `4` (verwarming) waargenomen.
 - **Het volledige antwoord en de moduleconfiguraties zijn opgehaald.** Daarmee zijn
   het `FilterConfig`-schema, het sondetype en de aanwezige hardware bekend — en kwam
   een fout in de documentatie aan het licht, zie
@@ -199,6 +202,12 @@ De `status`-sectie ververst bij bepaalde gebeurtenissen, niet op een vaste klok.
 Tijdens het bewegen van de afdekking sprong hij elke paar seconden mee; daarna bleef
 hij ruim twee uur bevroren, ook toen de verlichting via de API werd omgezet.
 
+Dat het om één gedeelde sectie gaat is daarna hard bevestigd: bij een volgend
+afdekcommando sprongen **alle** modules tegelijk naar dezelfde nieuwe tijdstempel —
+`ph`, `cl`, `filter`, `level`, `lighting`, `backwash`, `temperature`, de hele rij.
+Eén gebeurtenis ververst dus de status van álles, ook van modules die er niets mee te
+maken hebben.
+
 **Wat de app hieruit moet concluderen:**
 
 | Wat je wilt weten | Lees uit | Nooit uit |
@@ -246,6 +255,12 @@ doorstroming meldt. `spec.flow_alarm` geeft daarnaast aan of het zwembad
 doorstroombewaking überhaupt aan heeft staan — is die `false`, dan heeft dit alarm
 geen betekenis en kun je het beter niet aanmaken.
 
+**Let op: `201` is heel gewoon.** In een meting met stilstaande pomp stonden
+`ph.status.status` en `cl.status.status` allebei op `201`, en dat is precies zoals het
+hoort — zonder draaiende pomp is er nu eenmaal geen doorstroming. De code op zichzelf
+is dus geen storing en mag nooit alleen een alarm geven. Alleen de *combinatie* met
+een draaiende pomp is verdacht.
+
 ### 2.5 Afdekking, verlichting, controller
 
 | Waarde | API-pad | Capability |
@@ -267,9 +282,25 @@ de afdekking te laten bewegen en er `cover.status.status` bij uit te lezen:
 | 4 | Aan het sluiten | direct na `cmd/cover_close` |
 | 5 | Gestopt in tussenstand | na `cmd/cover_stop` halverwege het openen |
 
-**De code voor volledig open is nog onbekend**: bij deze test is de afdekking
-halverwege gestopt en daarna weer gesloten, dus die eindstand is niet bereikt.
-Waarschijnlijk 0, 1 of 6, maar dat is een gok tot iemand het meet.
+**De code voor volledig open is nog steeds onbekend.** Een tweede poging, waarbij de
+afdekking wél helemaal opengelopen is, leverde hem ook niet op: `status` bleef de hele
+loop op `3` staan en de sectie ververste daarna niet meer binnen de meettijd. Dat past
+bij het gedrag hierboven — de `status`-sectie ververst op gebeurtenissen, en het
+bereiken van de eindstand had op dat moment nog geen verse momentopname opgeleverd.
+
+Praktisch betekent dit dat een volledig geopende afdekking een tijd lang als
+"aan het openen" gerapporteerd blijft. De app moet daar rekening mee houden en niet
+aannemen dat `3` betekent dat er nú iets beweegt.
+
+#### Er is geen standpercentage
+
+`cover.status` bevat alleen `timestamp`, `status` en `covco`. **Hoe ver de afdekking
+open staat, geeft de API niet** — geen percentage, geen positie. Ook `covco` bleef in
+alle metingen op `0`, ook tijdens beweging en met een commando in de wachtrij.
+
+Voor Homey betekent dat: `windowcoverings_state` (open / gestopt / dicht) kan wel,
+maar `windowcoverings_set` met een schuifregelaar voor een percentage niet. Een meting
+halverwege het openen gaf geen enkel veld dat de stand verraadde.
 
 > Hier zit een fout in het bestaande prototype: dat rekent `5` bij *beweegt*. Een
 > afdekking die halverwege is gestopt blijft dan eindeloos "beweegt" tonen, terwijl
@@ -318,7 +349,7 @@ De PDF somt `ph`, `cl`, `filter`, `cover`, `temperature`, `lighting`, `level`,
 
 | Module | Inhoud | Bruikbaar als |
 |---|---|---|
-| `level` | `value` in centimeters, plus `delta` t.o.v. het streefniveau | waterniveau-sensor, en een alarm bij te grote afwijking |
+| `level` | `value` in centimeters, plus `delta` t.o.v. het streefniveau | waterniveau-sensor, en een alarm bij te grote afwijking — zie de waarschuwing hieronder |
 | `backwash` | eigen status én een schema met `interval`, `backwash_duration`, `start_date`, `start_time` | tonen wanneer de volgende spoeling gepland staat |
 | `firmware` | `gui_version`, `main_version`, `io_version`, `deck_version` | device-informatie in Homey |
 | `eco_valve` | `regulation` (hier `"off"`) | alleen tonen als in gebruik |
@@ -327,6 +358,14 @@ De PDF somt `ph`, `cl`, `filter`, `cover`, `temperature`, `lighting`, `level`,
 
 Vooral `level` is de moeite: een zakkend waterniveau is precies zo'n sluipend
 probleem waar je een melding voor wilt, en het staat niet in de documentatie.
+
+⚠️ **Maar het niveau beweegt mee met de afdekking.** Tijdens het openen liep `value`
+op van 4,44 naar 5,28 cm en `delta` van 0,34 naar 1,18 — een sprong die niets met
+waterverlies te maken heeft. Een niveaualarm moet dus onderdrukt worden zolang de
+afdekking beweegt of net bewogen heeft, anders krijg je een melding bij elke keer dat
+je gaat zwemmen. `spec.wl_hys_*` bevat de hysteresedrempels die het zwembad zelf
+hanteert; die zijn het logische startpunt voor de grenswaarden in plaats van een
+zelfbedacht getal.
 
 ---
 
@@ -704,12 +743,13 @@ bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-prak
    punt na: `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand. De code
    voor *volledig open* is nog niet gezien, omdat de test halverwege is gestopt.
    Eén keer helemaal open laten lopen en de status aflezen, dan is ook dat rond.
-4. ~~Wat betekent `lighting.status.status`?~~ **Niet meer relevant.** Bij het
-   aanzetten van het licht bleef dat veld op `1` staan terwijl
-   `config.always_active` direct van `false` naar `true` sprong — de hele
-   `status`-sectie was op dat moment ruim twee uur bevroren. `config.always_active`
-   is dus de bron voor aan/uit. Wat `status.status` betekent blijft onbekend, maar de
-   app heeft het niet nodig.
+4. **Wat betekent `lighting.status.status`?** Waarschijnlijk gewoon aan/uit, maar
+   onbruikbaar als bron. Bij het omzetten van het licht leek dat veld niet te
+   reageren; dat kwam doordat de hele `status`-sectie toen twee uur bevroren stond.
+   Zodra die sectie wél ververste, stond er `0` bij een uitgeschakeld licht — wat
+   past bij `1` = aan. Maar omdat het blok alleen bij gebeurtenissen ververst, kan het
+   uren achterlopen. **`config.always_active` blijft de bron** voor aan/uit; die
+   beweegt binnen 10 seconden mee.
 5. ~~Het `FilterConfig`-schema is niet uitgeschreven in de PDF.~~ **Opgehaald**, zie
    [§3.2](#het-filterconfig-schema--en-een-fout-in-de-documentatie). Belangrijkste
    vondst: `pump_speed` is daar een tekst (`"low"`, `"medium"`, …), niet het getal dat

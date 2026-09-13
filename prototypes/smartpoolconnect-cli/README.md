@@ -68,7 +68,9 @@ python3 pool_test.py light on --watch
 python3 pool_test.py open --watch
 ```
 
-Bij de afdekking zie je meerdere overgangen: eerst het bewegen (`3`), pas aan het eind van de loop de eindstand. Daarom stopt het volgen niet bij de eerste wijziging.
+Bij de afdekking zie je meerdere overgangen. Daarom stopt het volgen niet bij de eerste wijziging. Standaard pollt het 420 seconden, want een afdekking doet er meerdere minuten over; met `--watch-timeout` stel je dat bij.
+
+Houd er rekening mee dat het `status`-blok alleen bij gebeurtenissen ververst. Een afdekking kan dus al helemaal open staan terwijl de API nog `3` (aan het openen) meldt; lees in dat geval later nog eens met `status` of `raw`.
 
 `light on` en `light off` schakelen de verlichting via `PATCH /pool/{pid}/lighting` met `{"always_active": true|false}`. Dit is de eerste schrijfactie in dit script die een body verstuurt. De documentatie staat voor dít endpoint expliciet een kale aan/uit-body toe; andere modules eisen het volledige configuratie-object, dus kopieer deze aanpak niet zomaar naar `filter` of `spec`. Met `--dry-run` zie je de body zonder iets te versturen. Let op: `always_active: false` geeft de besturing terug aan een eventueel ingesteld tijdschema; staat dat uit, dan gaat het licht uit.
 
