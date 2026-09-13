@@ -93,8 +93,8 @@ Note that those successful calls used an OAuth token taken from a browser
 session, because no `spc_…` API key has been issued yet. A token works, but it
 expires; a Homey app runs unattended and cannot ask for a fresh one. The
 proposal therefore supports both credential types plus a repair flow, and an
-API key with `pools:read`, `controls:read` and `controls:write` is still worth
-requesting via `api-support@smartpoolconnect.eu`.
+API key with `pools:read` and `controls:write` is still worth requesting via
+`api-support@smartpoolconnect.eu`.
 
 See [the Homey app proposal](../../docs/homey-app-voorstel.md) for how the
 read and control features are planned to fit together.

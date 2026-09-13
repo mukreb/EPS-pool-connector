@@ -18,10 +18,10 @@ Het is een **ontwerpvoorstel**, geen implementatie. Basis is de aangeleverde
 |---|---|
 | Basis-URL | `https://api.smartpoolconnect.eu` — **cloud-only**. De kast host geen lokale API; er is dus géén endpoint op het IP-adres van het zwembad. |
 | Authenticatie | `X-API-Key: spc_…` (aanbevolen voor integraties) of OAuth 2.0 Bearer-token (primair voor de eigen web-UI). |
-| Scopes | Sinds 2026-07-08 hard afgedwongen. Nodig: `pools:read`, `controls:read`, `controls:write`. Zonder scope: HTTP 403 met `{"error":"missing_scope", …}`. |
+| Scopes | Sinds 2026-07-08 hard afgedwongen. Nodig: `pools:read` + `controls:write` — meer niet, zie hieronder. Zonder scope: HTTP 403 met `{"error":"missing_scope", …}`. |
 | Rate limit | 60 verzoeken/minuut per key, met `X-RateLimit-Limit/Remaining/Reset` headers. |
 | Hardwareversie | Dit zwembad is **v2** (vastgesteld 7 september 2026 via de ingelogde website). v2 = volledige besturing + configuratie. |
-| Alle meetwaarden | Eén `GET /pool/{pid}` levert alle modules met `metrics`, `status` en `config`. Dezelfde vorm voor v1/v2/v3 — de API vertaalt v3-firmwaretabellen naar v1/v2-vorm. |
+| Alle meetwaarden | Eén `GET /pool/{pid}` levert alle modules met `metrics`, `status` en `config`. Voor v2 én v3 dezelfde vorm — de API vertaalt v3-firmwaretabellen naar v1/v2-vorm. **v1 geeft hier HTTP 501**, zie hieronder. |
 
 ### Wat er inmiddels praktisch bewezen is
 
@@ -38,6 +38,30 @@ route uit dit voorstel werkt — niet alleen op papier:
 
 Dat laatste punt is geen detail: het bepaalt hoe de app met authenticatie moet
 omgaan, zie [§4.2](#42-authenticatie-twee-methoden-naast-elkaar).
+
+### Welke scopes precies nodig zijn
+
+De documentatie is hier preciezer dan je op het eerste gezicht zou denken: *"Reads
+under `/pool` and `/search` require **any of** `pools:read`, `controls:read`, or
+`history:read`"*. Eén van de drie volstaat dus voor álle leesverzoeken onder `/pool`
+— inclusief `GET /pool/{pid}/filter` en `GET /pool/{pid}/spec`, die voor de
+read-modify-write nodig zijn. Schrijven vereist `controls:write` of `pools:write`.
+
+`pools:read` + `controls:write` dekt daarmee alles wat deze app doet. `controls:read`
+erbij vragen voegt niets toe en maakt de aanvraag alleen zwaarder dan nodig; dat is
+ook precies wat de CLI-instructies in deze repo al aanraden.
+
+### Let op v1-zwembaden
+
+De PDF spreekt zichzelf op één punt tegen. Het hoofdstuk over sensordata stelt dat
+`GET /pool/{pid}` "dezelfde vorm" teruggeeft voor v1, v2 en v3, maar de
+endpointspecificatie is expliciet: **v1 geeft `501 Pool version not supported for
+detail view`** en verwijst voor v1-status naar de pool-lijst.
+
+Voor dit zwembad (v2) maakt dat niets uit, maar de app moet niet blind aannemen dat
+elk gekoppeld zwembad moduledata geeft: bij 501 terugvallen op de status uit
+`GET /pool` in plaats van een fout tonen. Dat kost weinig en voorkomt dat de app
+onbruikbaar is voor iemand met oudere hardware.
 
 Twee valkuilen die de documentatie expliciet noemt en die het ontwerp sturen:
 
@@ -404,8 +428,8 @@ Dingen die uitgezocht moeten worden. Geen ervan blokkeert de bouw nog — lezen 
 bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-praktisch-bewezen-is)).
 
 1. **De `spc_…`-API-key is nog niet ontvangen.** Aan te vragen via
-   `api-support@smartpoolconnect.eu`, met `pools:read`, `controls:read` en
-   `controls:write`, gekoppeld aan dit zwembad. Tot die er is werkt het OAuth-token,
+   `api-support@smartpoolconnect.eu`, met `pools:read` en `controls:write`,
+   gekoppeld aan dit zwembad. Tot die er is werkt het OAuth-token,
    maar dat is een tijdelijke oplossing — vandaar de dubbele ondersteuning en de
    repair-flow uit [§4.2](#42-authenticatie-twee-methoden-naast-elkaar).
 2. **Hoe lang is het huidige token geldig?** Het is al dagen ongewijzigd, maar dat

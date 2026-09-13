@@ -35,7 +35,9 @@ Daarna werken `python3 pool_test.py status`, `python3 pool_test.py open`, `pytho
 
 De API ondersteunt ook een OAuth access token. Met `python3 pool_test.py status --token` kun je dat verborgen invoeren; het script slaat het niet op. Hetzelfde werkt voor `open --token`, `stop --token` en `close --token`. Voer alleen het access token in, zonder `Bearer ` ervoor. Optioneel kun je zelf `SPC_ACCESS_TOKEN=...` in `.env` zetten; dit heeft voorrang op API-keys. Een verlopen token moet worden vervangen; automatisch vernieuwen zit niet in dit testscript.
 
-Op 7 september 2026 is via de ingelogde website vastgesteld dat dit zwembad online is en v2 gebruikt. De browser leest via websessie-endpoints op `www.smartpoolconnect.eu`. Daarna is met expliciete toestemming een directe `GET /pool/{pid}` op `api.smartpoolconnect.eu` uitgevoerd met het OAuth Bearer-token uit de browsersessie: HTTP 200, zwembad online. Het token is niet op schijf opgeslagen. Er zijn geen bewegingscommando's verstuurd; schrijfrechten en fysieke uitvoering zijn dus nog niet getest.
+Op 7 september 2026 is via de ingelogde website vastgesteld dat dit zwembad online is en v2 gebruikt. De browser leest via websessie-endpoints op `www.smartpoolconnect.eu`. Daarna is met expliciete toestemming een directe `GET /pool/{pid}` op `api.smartpoolconnect.eu` uitgevoerd met het OAuth Bearer-token uit de browsersessie: HTTP 200, zwembad online. Het token is niet op schijf opgeslagen.
+
+Inmiddels zijn ook bewegingscommando's verstuurd: met `open` en `close` is de afdekking daadwerkelijk opengegaan en weer dichtgegaan, via `POST /pool/{pid}/cmd/cover_open` en `cover_close` met datzelfde OAuth Bearer-token. Schrijfrechten en fysieke uitvoering zijn daarmee bevestigd voor de afdekking. De overige commando's (`backwash`, `shock_start`/`shock_stop`, `lighting_next`/`lighting_reset`) en de configuratie-endpoints (`PATCH /pool/{pid}/…`) zijn nog niet getest. Er is nog geen `spc_…`-API-key ontvangen, dus deze bevestiging geldt voor het tokenpad; een API-key is niet apart beproefd.
 
 ## Commando's
 
