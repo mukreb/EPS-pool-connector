@@ -1,6 +1,7 @@
 .git/
 .github/
 node_modules/
+test/
 *.log
 .DS_Store
 README.md

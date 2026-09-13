@@ -19,6 +19,10 @@ jobs:
       - name: Install Athom CLI
         run: npm install -g homey
 
+      - name: Unit tests (lib/api.js, lib/mapping.js)
+        working-directory: prototypes/smartpoolconnect-homey
+        run: npm test
+
       - name: Validate Homey app manifest
         working-directory: prototypes/smartpoolconnect-homey
         run: homey app validate --level publish

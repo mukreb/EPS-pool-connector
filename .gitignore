@@ -13,10 +13,12 @@ dist/
 .pytest_cache/
 
 # This checkout currently also contains a local virtualenv at its root.
-bin/
-include/
-lib/
-pyvenv.cfg
+# Anchored to the repo root so this doesn't also swallow unrelated lib/ (etc.)
+# directories elsewhere in the tree, e.g. prototypes/*/lib/.
+/bin/
+/include/
+/lib/
+/pyvenv.cfg
 .venv/
 venv/
 

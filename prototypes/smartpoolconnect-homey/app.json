@@ -1,6 +1,6 @@
 {
   "id": "com.mukreb.smartpoolconnect",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "compatibility": ">=10.0.0",
   "sdk": 3,
   "platforms": ["local"],
@@ -9,8 +9,8 @@
     "nl": "Smart Pool Connect"
   },
   "description": {
-    "en": "Read live status from your SmartPoolConnect pool (water and ambient temperature, pH, chlorine, filter, lighting, and deck cover).",
-    "nl": "Lees live status van je SmartPoolConnect zwembad (water- en luchttemperatuur, pH, chloor, filter, verlichting en afdekking)."
+    "en": "Read live status from your SmartPoolConnect pool and control the deck cover, lighting and filter pump (water and ambient temperature, pH, redox/chlorine, filter, dry-run and fault alarms, deck cover, lighting).",
+    "nl": "Lees live status van je SmartPoolConnect zwembad en bedien de afdekking, verlichting en filterpomp (water- en luchttemperatuur, pH, redox/chloor, filter, droogloop- en storingsalarm, afdekking, verlichting)."
   },
   "category": ["climate"],
   "permissions": [],
@@ -36,14 +36,32 @@
       "uiComponent": "sensor",
       "decimals": 2
     },
-    "measure_chlorine": {
+    "measure_redox": {
       "type": "number",
-      "title": { "en": "Chlorine", "nl": "Chloor" },
+      "title": { "en": "Redox", "nl": "Redox" },
       "units": { "en": "mV", "nl": "mV" },
       "getable": true,
       "setable": false,
       "uiComponent": "sensor",
       "decimals": 0
+    },
+    "measure_chlorine": {
+      "type": "number",
+      "title": { "en": "Free chlorine", "nl": "Vrij chloor" },
+      "units": { "en": "ppm", "nl": "ppm" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "decimals": 1
+    },
+    "measure_water_level": {
+      "type": "number",
+      "title": { "en": "Water level", "nl": "Waterniveau" },
+      "units": { "en": "cm", "nl": "cm" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "decimals": 1
     },
     "filter_running": {
       "type": "boolean",
@@ -52,20 +70,79 @@
       "setable": false,
       "uiComponent": "sensor",
       "insightsTitleTrue": { "en": "Running", "nl": "Draait" },
-      "insightsTitleFalse": { "en": "Stopped", "nl": "Stilstand" }
+      "insightsTitleFalse": { "en": "Stopped", "nl": "Gestopt" }
     },
-    "lighting_on": {
-      "type": "boolean",
-      "title": { "en": "Lighting", "nl": "Verlichting" },
+    "filter_status": {
+      "type": "enum",
+      "title": { "en": "Pump status", "nl": "Pompstatus" },
       "getable": true,
       "setable": false,
       "uiComponent": "sensor",
-      "insightsTitleTrue": { "en": "On", "nl": "Aan" },
-      "insightsTitleFalse": { "en": "Off", "nl": "Uit" }
+      "values": [
+        { "id": "off_disabled", "title": { "en": "Disabled", "nl": "Uitgeschakeld" } },
+        { "id": "off", "title": { "en": "Off", "nl": "Uit" } },
+        { "id": "schedule_1", "title": { "en": "Schedule 1", "nl": "Schema 1" } },
+        { "id": "schedule_2", "title": { "en": "Schedule 2", "nl": "Schema 2" } },
+        { "id": "schedule_3", "title": { "en": "Schedule 3", "nl": "Schema 3" } },
+        { "id": "heating", "title": { "en": "Heating", "nl": "Verwarming" } },
+        { "id": "solar", "title": { "en": "Solar", "nl": "Zonnecollector" } },
+        { "id": "backwash", "title": { "en": "Backwash", "nl": "Backwash" } },
+        { "id": "cooling", "title": { "en": "Cooling", "nl": "Koeling" } },
+        { "id": "manual", "title": { "en": "Manual", "nl": "Handmatig" } },
+        { "id": "frost_protection", "title": { "en": "Frost protection", "nl": "Vorstbeveiliging" } },
+        { "id": "active", "title": { "en": "Active", "nl": "Actief" } },
+        { "id": "cover", "title": { "en": "Deck cover", "nl": "Afdekking" } },
+        { "id": "valve_fault", "title": { "en": "Valve fault", "nl": "Klepfout" } },
+        { "id": "cover_low", "title": { "en": "Deck cover (low, normal)", "nl": "Afdekking laag (normaal)" } },
+        { "id": "too_hot", "title": { "en": "Too hot", "nl": "Te warm" } },
+        { "id": "invalid", "title": { "en": "Invalid", "nl": "Ongeldig" } },
+        { "id": "unknown", "title": { "en": "Unknown", "nl": "Onbekend" } }
+      ]
+    },
+    "filter_speed": {
+      "type": "enum",
+      "title": { "en": "Filter speed", "nl": "Filtersnelheid" },
+      "getable": true,
+      "setable": true,
+      "uiComponent": "picker",
+      "values": [
+        { "id": "off", "title": { "en": "Off", "nl": "Uit" } },
+        { "id": "low", "title": { "en": "Low", "nl": "Laag" } },
+        { "id": "medium", "title": { "en": "Medium", "nl": "Midden" } },
+        { "id": "high", "title": { "en": "High", "nl": "Hoog" } },
+        { "id": "max", "title": { "en": "Max", "nl": "Max" } }
+      ]
+    },
+    "alarm_dryrun": {
+      "type": "boolean",
+      "title": { "en": "Dry-run risk", "nl": "Droogloop-risico" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insightsTitleTrue": { "en": "Risk detected", "nl": "Risico gedetecteerd" },
+      "insightsTitleFalse": { "en": "No risk", "nl": "Geen risico" }
+    },
+    "alarm_fault": {
+      "type": "boolean",
+      "title": { "en": "Fault", "nl": "Storing" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insightsTitleTrue": { "en": "Fault", "nl": "Storing" },
+      "insightsTitleFalse": { "en": "OK", "nl": "OK" }
+    },
+    "alarm_water_level": {
+      "type": "boolean",
+      "title": { "en": "Water level deviation", "nl": "Waterniveau-afwijking" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insightsTitleTrue": { "en": "Deviating", "nl": "Wijkt af" },
+      "insightsTitleFalse": { "en": "Normal", "nl": "Normaal" }
     },
     "cover_state": {
       "type": "enum",
-      "title": { "en": "Deck cover", "nl": "Afdekking" },
+      "title": { "en": "Deck cover position", "nl": "Stand afdekking" },
       "getable": true,
       "setable": false,
       "uiComponent": "sensor",
@@ -74,7 +151,7 @@
         { "id": "closed", "title": { "en": "Closed", "nl": "Dicht" } },
         { "id": "opening", "title": { "en": "Opening", "nl": "Gaat open" } },
         { "id": "closing", "title": { "en": "Closing", "nl": "Gaat dicht" } },
-        { "id": "stopped", "title": { "en": "Stopped", "nl": "Gestopt" } },
+        { "id": "stopped", "title": { "en": "Stopped halfway", "nl": "Gestopt halverwege" } },
         { "id": "unknown", "title": { "en": "Unknown", "nl": "Onbekend" } }
       ]
     }
@@ -82,19 +159,26 @@
   "drivers": [
     {
       "id": "pool",
-      "name": {
-        "en": "Pool",
-        "nl": "Zwembad"
-      },
+      "name": { "en": "Pool", "nl": "Zwembad" },
       "class": "sensor",
       "capabilities": [
         "measure_temperature",
         "measure_temperature.ambient",
+        "target_temperature",
         "measure_ph",
+        "measure_redox",
         "measure_chlorine",
+        "measure_water_level",
+        "measure_current",
         "filter_running",
-        "lighting_on",
-        "cover_state"
+        "filter_status",
+        "filter_speed",
+        "alarm_dryrun",
+        "alarm_fault",
+        "alarm_water_level",
+        "onoff.pause",
+        "onoff.shock",
+        "button.backwash"
       ],
       "capabilitiesOptions": {
         "measure_temperature": {
@@ -102,6 +186,28 @@
         },
         "measure_temperature.ambient": {
           "title": { "en": "Ambient temperature", "nl": "Luchttemperatuur" }
+        },
+        "target_temperature": {
+          "min": 15,
+          "max": 35,
+          "step": 0.5
+        },
+        "measure_current": {
+          "title": { "en": "Pump current", "nl": "Pompstroom" }
+        },
+        "onoff.pause": {
+          "title": { "en": "Controller paused", "nl": "Controller gepauzeerd" },
+          "insightsTitleTrue": { "en": "Paused", "nl": "Gepauzeerd" },
+          "insightsTitleFalse": { "en": "Running", "nl": "Actief" }
+        },
+        "onoff.shock": {
+          "title": { "en": "Shock chlorination", "nl": "Shockchlorering" },
+          "insightsTitleTrue": { "en": "Active", "nl": "Actief" },
+          "insightsTitleFalse": { "en": "Inactive", "nl": "Inactief" }
+        },
+        "button.backwash": {
+          "title": { "en": "Start backwash", "nl": "Backwash starten" },
+          "maintenanceAction": true
         }
       },
       "platforms": ["local"],
@@ -126,6 +232,11 @@
           "template": "add_devices"
         }
       ],
+      "repair": [
+        {
+          "id": "repair_credentials"
+        }
+      ],
       "settings": [
         {
           "id": "poll_interval",
@@ -138,16 +249,89 @@
             "en": "How often to fetch the pool status. The API allows ~60 requests/minute per key.",
             "nl": "Hoe vaak de zwembadstatus opgehaald wordt. De API staat ~60 verzoeken/minuut per key toe."
           }
+        }
+      ]
+    },
+    {
+      "id": "cover",
+      "name": { "en": "Deck cover", "nl": "Afdekking" },
+      "class": "windowcoverings",
+      "capabilities": ["windowcoverings_state", "cover_state"],
+      "capabilitiesOptions": {
+        "cover_state": {
+          "title": { "en": "Position", "nl": "Stand" }
+        }
+      },
+      "platforms": ["local"],
+      "connectivity": ["cloud"],
+      "images": {
+        "small": "/drivers/cover/assets/images/small.png",
+        "large": "/drivers/cover/assets/images/large.png",
+        "xlarge": "/drivers/cover/assets/images/xlarge.png"
+      },
+      "pair": [
+        {
+          "id": "list_pools",
+          "template": "list_devices",
+          "navigation": { "next": "add_devices" }
         },
         {
-          "id": "base_url",
-          "type": "text",
-          "label": { "en": "API base URL", "nl": "API basis URL" },
-          "value": "https://api.smartpoolconnect.eu",
+          "id": "add_devices",
+          "template": "add_devices"
+        }
+      ],
+      "repair": [
+        {
+          "id": "repair_credentials"
+        }
+      ],
+      "settings": [
+        {
+          "id": "allow_control",
+          "type": "checkbox",
+          "label": { "en": "Allow cover control", "nl": "Bediening afdekking toestaan" },
+          "value": false,
           "hint": {
-            "en": "Only change this if SmartPoolConnect tells you to.",
-            "nl": "Alleen wijzigen als SmartPoolConnect dat aangeeft."
+            "en": "Moving the cover is a physical action that can trap someone in the water, and the stop command also runs through the cloud — it is not a local emergency stop. While this is off, the cover is read-only and the flow actions are blocked. Keep local/manual control reachable at all times.",
+            "nl": "De afdekking bewegen is een fysieke handeling die iemand in het water kan beknellen, en ook het stopcommando loopt via de cloud — het is geen lokale noodstop. Zolang dit uit staat is de afdekking alleen-lezen en zijn de flow-acties geblokkeerd. Houd de lokale/handmatige bediening altijd bereikbaar."
           }
+        }
+      ]
+    },
+    {
+      "id": "light",
+      "name": { "en": "Pool lighting", "nl": "Zwembadverlichting" },
+      "class": "light",
+      "capabilities": ["onoff", "button.next_colour", "button.reset_colour"],
+      "capabilitiesOptions": {
+        "button.next_colour": {
+          "title": { "en": "Next colour", "nl": "Volgende kleur" }
+        },
+        "button.reset_colour": {
+          "title": { "en": "Reset colour", "nl": "Kleur resetten" }
+        }
+      },
+      "platforms": ["local"],
+      "connectivity": ["cloud"],
+      "images": {
+        "small": "/drivers/light/assets/images/small.png",
+        "large": "/drivers/light/assets/images/large.png",
+        "xlarge": "/drivers/light/assets/images/xlarge.png"
+      },
+      "pair": [
+        {
+          "id": "list_pools",
+          "template": "list_devices",
+          "navigation": { "next": "add_devices" }
+        },
+        {
+          "id": "add_devices",
+          "template": "add_devices"
+        }
+      ],
+      "repair": [
+        {
+          "id": "repair_credentials"
         }
       ]
     }
