@@ -112,12 +112,13 @@ De documentatie vertaalt de codes in `cover.status.status` niet. Op 13 september
 
 | Code | Betekenis |
 |---|---|
+| 1 | Volledig open |
 | 2 | Dicht |
 | 3 | Aan het openen |
 | 4 | Aan het sluiten |
 | 5 | Gestopt in tussenstand |
 
-De code voor *volledig open* is nog niet waargenomen; bij die test is halverwege gestopt.
+De afdekking doet er ruim zes minuten over om van dicht naar open te lopen (gemeten: 363 seconden van code `3` naar code `1`). Omdat het status-blok alleen bij gebeurtenissen ververst, kan een al geopende afdekking daarna nog een tijd als `3` gerapporteerd blijven.
 
 Reken op **20 tot 30 seconden** tussen het versturen van een commando en het moment dat de nieuwe status zichtbaar is. Gebruik `cover.status.timestamp` om te zien of het zwembad echt iets nieuws gemeld heeft: dat veld verspringt pas bij een echte statuswijziging, terwijl `activity_at` bij vrijwel elk verzoek meebeweegt.
 

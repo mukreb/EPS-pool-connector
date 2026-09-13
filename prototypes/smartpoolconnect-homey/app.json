@@ -70,6 +70,7 @@
       "setable": false,
       "uiComponent": "sensor",
       "values": [
+        { "id": "open", "title": { "en": "Open", "nl": "Open" } },
         { "id": "closed", "title": { "en": "Closed", "nl": "Dicht" } },
         { "id": "opening", "title": { "en": "Opening", "nl": "Gaat open" } },
         { "id": "closing", "title": { "en": "Closing", "nl": "Gaat dicht" } },

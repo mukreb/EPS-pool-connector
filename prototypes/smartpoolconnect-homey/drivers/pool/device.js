@@ -4,8 +4,8 @@ const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
 
 // Gemeten op 13-09-2026; deze codes staan niet in de API-documentatie.
-// De code voor "volledig open" is nog niet waargenomen.
 const COVER_STATES = new Map([
+  [1, 'open'],
   [2, 'closed'],
   [3, 'opening'],
   [4, 'closing'],
@@ -74,8 +74,11 @@ class PoolDevice extends Homey.Device {
     const ambient = pool?.temperature?.metrics?.ambient_temp;
     const ph = pool?.ph?.metrics?.actual;
     const cl = pool?.cl?.metrics?.actual;
-    const pumpStatus = pool?.filter?.status?.pump_status;
-    const lighting = pool?.lighting?.status?.status;
+    // Het status-blok is een pool-brede momentopname die alleen bij gebeurtenissen
+    // ververst en uren oud kan zijn; metrics en config zijn wel actueel.
+    const pumpSpeed = pool?.filter?.metrics?.pump_speed;
+    const pumpCurrent = pool?.filter?.metrics?.pump_current;
+    const lighting = pool?.lighting?.config?.always_active;
     const cover = pool?.cover?.status?.status;
 
     await this._setIfNumber('measure_temperature', water);
@@ -83,11 +86,12 @@ class PoolDevice extends Homey.Device {
     await this._setIfNumber('measure_ph', ph);
     await this._setIfNumber('measure_chlorine', cl);
 
-    if (typeof pumpStatus === 'number') {
-      await this.setCapabilityValue('filter_running', pumpStatus > 0).catch(this.error);
+    if (typeof pumpSpeed === 'number' || typeof pumpCurrent === 'number') {
+      const running = (pumpSpeed > 0) || (pumpCurrent > 0);
+      await this.setCapabilityValue('filter_running', running).catch(this.error);
     }
-    if (typeof lighting === 'number') {
-      await this.setCapabilityValue('lighting_on', lighting === 1).catch(this.error);
+    if (typeof lighting === 'boolean') {
+      await this.setCapabilityValue('lighting_on', lighting).catch(this.error);
     }
     await this.setCapabilityValue('cover_state', this._mapCover(cover)).catch(this.error);
   }

@@ -23,14 +23,24 @@ design.
 | Ambient temperature (°C) | `temperature.metrics.ambient_temp` |
 | pH | `ph.metrics.actual` |
 | Chlorine (mV) | `cl.metrics.actual` |
-| Filter pump (on/off) | `filter.status.pump_status > 0` |
-| Lighting (on/off) | `lighting.status.status === 1` |
-| Deck cover (closed / opening / closing / stopped / unknown) | `cover.status.status` |
+| Filter pump (on/off) | `filter.metrics.pump_speed` / `pump_current` |
+| Lighting (on/off) | `lighting.config.always_active` |
+| Deck cover (open / closed / opening / closing / stopped) | `cover.status.status` |
+
+Readings come from `metrics` and `config`, never from `status`. The `status`
+section is a single pool-wide snapshot shared by every module that only
+refreshes when the pool reports an event, and it was measured at over two hours
+stale — still claiming the pump ran at high speed while it drew 0.0 A. The one
+exception is the cover position, which has no other source and does refresh
+while the cover moves.
 
 The cover status codes are not documented by the API. They were measured on
-13-09-2026 by moving the cover and reading `cover.status.status`: `2` closed,
-`3` opening, `4` closing, `5` stopped part-way. The code for *fully open* has
-not been observed yet and still reports as unknown.
+13-09-2026 by moving the cover and reading `cover.status.status`: `1` open,
+`2` closed, `3` opening, `4` closing, `5` stopped part-way.
+
+Note that the cover takes about six minutes to travel end to end, and that
+`cover.status` only refreshes when the pool reports an event. A cover that has
+finished opening can therefore still read as `opening` for a while.
 
 Polling interval is configurable per device (15–300 s, default 30 s).
 At default settings the app makes ~2 requests per minute, well under the

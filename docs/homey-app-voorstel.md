@@ -33,8 +33,9 @@ route uit dit voorstel werkt — niet alleen op papier:
 - **Bedienen werkt.** De afdekking is via `POST /pool/{pid}/cmd/cover_open`,
   `cover_stop` en `cover_close` daadwerkelijk gaan bewegen, halverwege gestopt en
   weer gesloten. Daarmee is de hele bedieningskant van dit voorstel geen aanname meer.
-- **De afdekstatuscodes zijn gemeten** door tijdens die beweging status uit te lezen,
-  zie [§2.5](#statuscodes-van-de-afdekking--gemeten-niet-gedocumenteerd).
+- **De afdekstatuscodes zijn volledig gemeten** — alle vijf, inclusief de looptijd van
+  ruim zes minuten. Zie
+  [§2.5](#statuscodes-van-de-afdekking--gemeten-niet-gedocumenteerd).
 - **Twee verschillende vertragingen**, en dat verschil is bepalend voor de app: een
   `POST /cmd/*` doet er 20 tot 30 seconden over, een `PATCH` op een module is binnen
   10 seconden zichtbaar. Zie [§3.3](#33-hoe-lang-duurt-het-voordat-een-wijziging-zichtbaar-is).
@@ -277,20 +278,29 @@ de afdekking te laten bewegen en er `cover.status.status` bij uit te lezen:
 
 | Code | Betekenis | Hoe vastgesteld |
 |---|---|---|
+| 1 | Volledig open | na een complete openingsloop |
 | 2 | Dicht | beginstand, afdekking lag dicht |
 | 3 | Aan het openen | direct na `cmd/cover_open` |
 | 4 | Aan het sluiten | direct na `cmd/cover_close` |
 | 5 | Gestopt in tussenstand | na `cmd/cover_stop` halverwege het openen |
 
-**De code voor volledig open is nog steeds onbekend.** Een tweede poging, waarbij de
-afdekking wél helemaal opengelopen is, leverde hem ook niet op: `status` bleef de hele
-loop op `3` staan en de sectie ververste daarna niet meer binnen de meettijd. Dat past
-bij het gedrag hierboven — de `status`-sectie ververst op gebeurtenissen, en het
-bereiken van de eindstand had op dat moment nog geen verse momentopname opgeleverd.
+De set is daarmee compleet en logisch: `1` en `2` zijn de twee ruststanden, `3` en `4`
+de twee bewegingen, en `5` de onderbroken tussenstand.
 
-Praktisch betekent dit dat een volledig geopende afdekking een tijd lang als
-"aan het openen" gerapporteerd blijft. De app moet daar rekening mee houden en niet
-aannemen dat `3` betekent dat er nú iets beweegt.
+#### De looptijd is minuten, niet seconden
+
+Van `3` naar `1` zat **363 seconden — ruim zes minuten**. Dat is een eigenschap van de
+installatie, geen API-vertraging, maar het bepaalt wel hoe de app zich moet gedragen:
+
+- Een afdekcommando is niet "klaar" na een halve minuut. De eindstand komt minuten
+  later binnen via de gewone pollcyclus, niet via de korte verversing direct na het
+  commando.
+- Tussendoor blijft de stand `3` of `4`. De app moet die weergeven als *beweegt*, maar
+  er niet uit afleiden dat er nog iets loopt zodra er minuten overheen zijn — de
+  `status`-sectie ververst pas bij een volgende gebeurtenis, dus een al geopende
+  afdekking kan nog even als "aan het openen" in beeld staan.
+- Een flow die de afdekking opent en daarna iets anders wil doen, moet wachten op
+  `status == 1`, niet op het uitblijven van een foutmelding.
 
 #### Er is geen standpercentage
 
@@ -739,10 +749,8 @@ bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-prak
 2. ~~Hoe lang is het huidige token geldig?~~ **Niet vast te stellen.** Het token is
    geen standaard JWT en draagt geen leesbaar `exp`-veld, dus de vervaldatum is niet
    te voorspellen. Dat is zelf het antwoord: bouw op de repair-flow en vraag de key aan.
-3. ~~Statuscodes van de afdekking zijn niet gedocumenteerd.~~ **Opgelost**, op één
-   punt na: `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand. De code
-   voor *volledig open* is nog niet gezien, omdat de test halverwege is gestopt.
-   Eén keer helemaal open laten lopen en de status aflezen, dan is ook dat rond.
+3. ~~Statuscodes van de afdekking zijn niet gedocumenteerd.~~ **Volledig opgelost**:
+   `1` open, `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand.
 4. **Wat betekent `lighting.status.status`?** Waarschijnlijk gewoon aan/uit, maar
    onbruikbaar als bron. Bij het omzetten van het licht leek dat veld niet te
    reageren; dat kwam doordat de hele `status`-sectie toen twee uur bevroren stond.
