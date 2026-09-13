@@ -37,8 +37,13 @@ route uit dit voorstel werkt — niet alleen op papier:
   zie [§2.5](#statuscodes-van-de-afdekking--gemeten-niet-gedocumenteerd).
 - **Een commando doet er 20 tot 30 seconden over** voordat het in de status zichtbaar
   is. Dat is bepalend voor hoe de app na een commando moet verversen.
+- **Het volledige antwoord en de moduleconfiguraties zijn opgehaald.** Daarmee zijn
+  het `FilterConfig`-schema, het sondetype en de aanwezige hardware bekend — en kwam
+  een fout in de documentatie aan het licht, zie
+  [§3.2](#het-filterconfig-schema--en-een-fout-in-de-documentatie).
 - **Het gebruikte credential is een OAuth-token uit de browsersessie**, niet een
-  `spc_…`-API-key. Die key is nog niet door de leverancier verstrekt.
+  `spc_…`-API-key. Die key is nog niet door de leverancier verstrekt, en de
+  vervaldatum van het token blijkt niet leesbaar.
 
 Dat laatste punt is geen detail: het bepaalt hoe de app met authenticatie moet
 omgaan, zie [§4.2](#42-authenticatie-twee-methoden-naast-elkaar).
@@ -94,9 +99,18 @@ Alles hieronder komt uit één `GET /pool/{pid}`, tenzij anders vermeld.
 | Vrij chloor | `cl.metrics.clm` | `measure_chlorine` (custom) | ppm |
 
 De documentatie onderscheidt twee sondetypes: RX-sondes vullen `actual` (mV),
-CLM-sondes vullen `clm` (ppm). Welke van de twee dit zwembad heeft, is nog niet
-vastgesteld — de app moet de capability pas toevoegen als het veld daadwerkelijk
-een getal bevat, en niet blind beide tonen.
+CLM-sondes vullen `clm` (ppm). **Dit zwembad heeft geen CLM-sonde**: `spec.clm_sensor`
+staat op `false` en `cl.metrics` bevat dan ook alleen `actual` in mV. De
+ppm-capability moet hier dus niet aangemaakt worden.
+
+Dat is meteen het nette patroon: niet kijken of een veld toevallig een getal bevat,
+maar de expliciete vlag in `spec` lezen — zie
+[§2.6](#26-spec-vertelt-welke-capabilities-je-moet-aanmaken).
+
+De `config`-blokken geven er gratis streefwaarden bij: `ph.config.target` en
+`cl.config.rx.target`. Daarmee kan de app tonen hoe ver een meting van zijn doel
+af zit, in plaats van een kaal getal — en een flow kan op die afwijking triggeren
+zonder dat je de streefwaarde in Homey hoeft over te typen.
 
 > Let op: de huidige prototype-app noemt `cl.metrics.actual` "Chlorine" in mV.
 > Dat is strikt genomen redox, niet chloor. In het voorstel wordt dat
@@ -111,6 +125,16 @@ een getal bevat, en niet blind beide tonen.
 
 De documentatie merkt op dat `water_temp` gevuld is zodra de sonde bedraad is —
 verwarming hoeft niet ingeschakeld te zijn.
+
+⚠️ `temperature.metrics` bevat nog twee velden die er als temperatuur uitzien maar
+het niet zijn: `main_temp` stond op `1581.0` en `imx_temp` op `52.5`. De eerste is
+geen graden Celsius (een ruwe sensorwaarde), de tweede is vrijwel zeker de
+temperatuur van de besturingsprint. **Alleen `water_temp` en `ambient_temp` zijn
+zwembadtemperaturen.** Wie hier blind alles wat op `_temp` eindigt als capability
+aanhangt, zet 1581 °C in de tegel.
+
+`temperature.config.target` is de streeftemperatuur (30,5 °C bij deze installatie)
+en is dus de waarde waar een `target_temperature`-capability op zou moeten aansluiten.
 
 ### 2.3 Filterpomp
 
@@ -140,6 +164,28 @@ verwarming hoeft niet ingeschakeld te zijn.
 Code 12 (klepfout) en 15 (ongeldig) zijn kandidaten voor een storingsmelding.
 Code 13 is expliciet als *normaal* gedocumenteerd en moet dus géén alarm geven.
 
+#### `status` en `metrics` zijn niet even vers — niet door elkaar gebruiken
+
+Dit is de belangrijkste valkuil die uit de meetdata naar boven kwam. Elk moduleblok
+heeft een eigen `timestamp`, en die van `status` en `metrics` lopen uiteen. In één
+meting stond:
+
+| Veld | Waarde | Ouderdom |
+|---|---|---|
+| `filter.status.pump_speed` | 3 (hoog) | ~2 uur oud |
+| `filter.status.pump_status` | 4 (verwarming) | ~2 uur oud |
+| `filter.metrics.pump_speed` | 0 (uit) | vers |
+| `filter.metrics.pump_current` | 0,0 A | vers |
+
+De pomp stond dus gewoon stil, maar het `status`-blok beweerde nog dat hij op hoog
+liep voor de verwarming. Een app die "draait de pomp?" uit `status` afleidt, toont
+twee uur lang iets onwaars.
+
+**`metrics.pump_current` is de betrouwbaarste bron**: stroom loopt of niet. Combineer
+dat met `metrics.pump_speed`, en gebruik `status.pump_status` uitsluitend voor de
+*reden* — met de kanttekening dat die reden achter kan lopen. Vergelijk desnoods de
+twee timestamps en negeer `status` als het te oud is.
+
 ### 2.4 Droogloopdetectie — de belangrijkste afgeleide waarde
 
 De documentatie beschrijft letterlijk hoe je "pomp draait maar geen doorstroming"
@@ -158,6 +204,20 @@ Dit wordt in het voorstel capability `alarm_dryrun` (Homey-alarm, rood in de UI)
 met een bijbehorende flow-trigger. De firmware bepaalt zelf of er doorstroming is
 op basis van de geconfigureerde detectiemethode (schoepenrad / direct / druk /
 Modbus-pomp), dus de app hoeft het sensortype niet te kennen.
+
+⚠️ Let op dat het voorbeeld uit de documentatie `pump_status` uit het `status`-blok
+haalt en `pump_speed` uit `metrics`. Die twee zijn verschillend oud (zie hierboven),
+dus dat mengt een verouderde reden met een verse snelheid. Veiliger is om de
+pompkant op verse velden te baseren:
+
+```js
+const pumpOn = filter.metrics.pump_speed > 0 || filter.metrics.pump_current > 0;
+```
+
+Wat overeind blijft is de vergelijking zelf: pomp aan én een doseerkanaal dat geen
+doorstroming meldt. `spec.flow_alarm` geeft daarnaast aan of het zwembad
+doorstroombewaking überhaupt aan heeft staan — is die `false`, dan heeft dit alarm
+geen betekenis en kun je het beter niet aanmaken.
 
 ### 2.5 Afdekking, verlichting, controller
 
@@ -193,6 +253,54 @@ Voor de app betekent dit vier zinvolle standen in plaats van twee: `closed`,
 die stilstaat maar niet dicht is, is precies het geval waar je een flow op wilt
 kunnen bouwen ("afdekking staat al een uur halfopen").
 
+### 2.6 `spec` vertelt welke capabilities je moet aanmaken
+
+`GET /pool/{pid}` bevat een `spec`-blok dat beschrijft **welke hardware deze
+installatie heeft**. Dat is precies wat een Homey-app nodig heeft om niet een tegel
+vol lege waarden te tonen. Een greep uit wat er bij deze installatie in staat:
+
+| Vlag | Waarde hier | Wat de app ermee doet |
+|---|---|---|
+| `deck_enabled` | `true` | afdekking-device aanmaken |
+| `lighting_enabled` | `true` | licht-device aanmaken |
+| `lighting_type` | `"single"` | **enkelkleurige lamp** — geen kleurknoppen |
+| `heating_enabled` | `true` | verwarmingscapabilities tonen |
+| `heating_solar` | `false` | geen zonnecollector-module |
+| `backwash_enabled` | `true` | backwash-knop tonen |
+| `clm_sensor` | `false` | géén ppm-chloor, alleen redox |
+| `wl_sensor` | `true` | waterniveau tonen |
+| `flow_alarm` | `true` | droogloopalarm heeft betekenis |
+| `aux_1` … `aux_4` | `false` | geen aux-slots, niets aanmaken |
+| `pool_volume` | `60` | informatief |
+| `pause` | `false` | huidige pauzestand |
+
+**Dat `lighting_type` op `single` staat, verandert het ontwerp.** De documentatie
+zegt zelf dat `lighting_next` en `lighting_reset` niets doen op een enkelkleurige
+lamp. De kleurknoppen die eerder in dit voorstel stonden zijn hier dus loze knoppen
+en moeten alleen verschijnen als `lighting_type` een RGB-variant is.
+
+De pair-flow leest `spec` daarom één keer en bouwt daaruit de capabilitylijst op,
+in plaats van alles aan te maken en te hopen dat het gevuld wordt. Bij een
+`spec`-wijziging (nieuwe hardware) kan de app de lijst bij een volgende poll
+bijwerken.
+
+### 2.7 Modules die de documentatie niet noemt
+
+De PDF somt `ph`, `cl`, `filter`, `cover`, `temperature`, `lighting`, `level`,
+`aux/{slot}` en `spec` op. In het echte antwoord zitten er meer:
+
+| Module | Inhoud | Bruikbaar als |
+|---|---|---|
+| `level` | `value` in centimeters, plus `delta` t.o.v. het streefniveau | waterniveau-sensor, en een alarm bij te grote afwijking |
+| `backwash` | eigen status én een schema met `interval`, `backwash_duration`, `start_date`, `start_time` | tonen wanneer de volgende spoeling gepland staat |
+| `firmware` | `gui_version`, `main_version`, `io_version`, `deck_version` | device-informatie in Homey |
+| `eco_valve` | `regulation` (hier `"off"`) | alleen tonen als in gebruik |
+| `zero_e` | drempelwaarden, hier uitgeschakeld | alleen tonen als `enabled` |
+| `api_version` | `2` | bevestigt de hardwareversie in het antwoord zelf — handig voor de 501-afhandeling bij v1 |
+
+Vooral `level` is de moeite: een zakkend waterniveau is precies zo'n sluipend
+probleem waar je een melding voor wilt, en het staat niet in de documentatie.
+
 ---
 
 ## 3. Wat er te bedienen valt
@@ -221,8 +329,38 @@ niet getest.
 |---|---|---|
 | Verlichting aan/uit | `PATCH /pool/{pid}/lighting` | `{"always_active": true\|false}` |
 | Controller pauzeren | `PATCH /pool/{pid}/spec` | `{"pause": true\|false}` |
-| Filtersnelheid & schema's | `PATCH /pool/{pid}/filter` | volledig `FilterConfig`-object |
+| Filtersnelheid & schema's | `PATCH /pool/{pid}/filter` | volledig `FilterConfig`-object, zie hieronder |
 | Pompgedrag bij afdekking | `PATCH /pool/{pid}/cover` | volledig `CoverConfig`-object |
+
+#### Het `FilterConfig`-schema — en een fout in de documentatie
+
+Dit schema stond niet uitgeschreven in de PDF. Opgehaald met `GET /pool/{pid}/filter`
+ziet het er zo uit:
+
+```json
+{
+  "always_active": false,
+  "pump_speed": "low",
+  "schedule_1": { "pump_speed": "off",  "start_time": "00:00",
+                  "stop_time": "00:00", "enabled": false, "days": [] },
+  "schedule_2": { "…": "idem" },
+  "schedule_3": { "pump_speed": "high", "start_time": "00:00",
+                  "stop_time": "23:55", "enabled": true,
+                  "days": ["monday", "tuesday", "…", "sunday"] }
+}
+```
+
+⚠️ **`pump_speed` is hier een tekst, geen getal.** De waarden zijn `"off"`, `"low"`,
+`"medium"`, `"high"` en `"max"`. Dat is iets anders dan de meetwaarde
+`filter.metrics.pump_speed`, die wél een getal is (`0`–`4`).
+
+Daarmee klopt het recept uit de documentatie niet. Die schrijft letterlijk *"enable a
+schedule with `pump_speed: 2` (Medium)"* — maar een `2` op dit veld is geen geldige
+waarde voor het configuratie-object. Het moet `"medium"` zijn. Wie de documentatie
+hier letterlijk volgt, krijgt de `did not match any variant of untagged enum`-fout
+die diezelfde pagina bij de andere valkuil beschrijft.
+
+`days` is een lijst met volledig uitgeschreven Engelse dagnamen in kleine letters.
 
 Twee dingen die de documentatie nadrukkelijk waarschuwt en die makkelijk fout gaan:
 
@@ -298,22 +436,24 @@ API-client heeft er verder geen last van — één `authHeader()`-functie die op
 van het opgeslagen credentialtype de juiste header zet, de rest van de code blijft
 identiek.
 
-**Omgaan met een verlopend token.** Dat het token al dagen ongewijzigd is, betekent
-niet dat het onbeperkt geldig is — een JWT draagt zijn eigen vervaldatum mee in het
-`exp`-veld van de payload. Die is zonder sleutel uit te lezen: het middelste deel van
-het token is base64, en daar staat een Unix-tijdstempel in. Zo weet je precies hoe
-lang je nog hebt in plaats van te moeten afwachten.
+**Omgaan met een verlopend token.** Hier liep een aanname stuk. Het plan was om de
+vervaldatum uit het `exp`-veld van de JWT-payload te lezen, zodat je vooraf weet
+hoeveel tijd je hebt. Dat werkt niet: **het token van SmartPoolConnect is geen
+standaard JWT** en bevat geen leesbaar `exp`-veld. Het CLI-prototype meldt dat nu
+ook eerlijk in plaats van een datum te verzinnen.
 
-De app doet daar drie dingen mee:
+Gevolg: de vervaldatum is niet te voorspellen. Het token kan morgen ongeldig zijn of
+over een half jaar; dat het al dagen werkt zegt niets over wat er gaat komen. Er is
+geen waarschuwing vooraf mogelijk — alleen opvangen achteraf.
 
-1. **Bij het koppelen** het `exp`-veld uitlezen en de vervaldatum tonen, zodat
-   meteen duidelijk is of dit een token van een dag of van een half jaar is.
-2. **Ruim van tevoren waarschuwen** — een Homey-melding een paar dagen voor de
-   vervaldatum, in plaats van een zwembad dat op een onbewaakt moment stilvalt.
-3. **Een repair-flow** (`"repair"` naast `"pair"` in `app.json`). Als de API 401
-   teruggeeft, gaat het device op *niet beschikbaar* met de melding "token verlopen —
-   open Reparatie om een nieuw token te plakken". Je hoeft het device dan niet
-   opnieuw toe te voegen en je flows blijven intact.
+Daarmee wordt de **repair-flow** (`"repair"` naast `"pair"` in `app.json`) geen
+comfort maar de kern van de oplossing. Als de API 401 teruggeeft, gaat het device op
+*niet beschikbaar* met de melding "token verlopen — open Reparatie om een nieuw token
+te plakken". Je hoeft het device dan niet opnieuw toe te voegen en je flows blijven
+intact. Zonder die flow ben je bij elke sessievernieuwing je hele configuratie kwijt.
+
+Het onderstreept ook waarom de `spc_…`-key de echte oplossing is: die heeft wél een
+voorspelbare geldigheidsduur (een jaar volgens de documentatie).
 
 Zodra de `spc_…`-key er is, is dat een kwestie van één keer de repair-flow doorlopen
 en het tokenpad wordt verder niet meer geraakt.
@@ -361,7 +501,7 @@ zwembad echt iets nieuws gemeld heeft, en niet dat de app alleen opnieuw gekeken
 | `measure_temperature.ambient` | lucht °C | lezen |
 | `measure_ph` | pH | lezen |
 | `measure_redox` | mV | lezen |
-| `measure_chlorine` | ppm (als aanwezig) | lezen |
+| `measure_water_level` | waterniveau cm | lezen |
 | `measure_current` | pompstroom A | lezen |
 | `filter_running` | boolean | lezen |
 | `filter_status` | enum (16 codes) | lezen |
@@ -383,27 +523,37 @@ zwembad echt iets nieuws gemeld heeft, en niet dat de app alleen opnieuw gekeken
 | Capability | Mapping |
 |---|---|
 | `onoff` | `PATCH /lighting` `{"always_active": …}` |
-| `button.next_colour` | `cmd/lighting_next` |
-| `button.reset_colour` | `cmd/lighting_reset` |
+| `button.next_colour` | `cmd/lighting_next` — **alleen bij een RGB-lamp** |
+| `button.reset_colour` | `cmd/lighting_reset` — idem |
+
+`spec.lighting_type` staat bij deze installatie op `single`. Op een enkelkleurige
+lamp doen beide commando's niets, dus die twee knoppen worden hier niet aangemaakt.
 
 ### 4.5 Hoe de tegel eruit ziet
 
+Met echte waarden uit de meting, en de streefwaarden uit de `config`-blokken ernaast:
+
 ```
-┌──────────────────────────────────┐   ┌─────────────────┐  ┌─────────────────┐
-│  Zwembad                     ●   │   │  Afdekking      │  │  Verlichting    │
-│                                  │   │                 │  │                 │
-│   Water        26,4 °C           │   │      ▲          │  │       ◯         │
-│   Lucht        19,1 °C           │   │      ■          │  │                 │
-│   pH            7,18             │   │      ▼          │  │   Volgende      │
-│   Redox          712 mV          │   │                 │  │   kleur   ▸     │
-│   Pomp     Schema 1 · midden     │   │   Open · 13:04  │  │                 │
-│   Stroom        1,8 A            │   └─────────────────┘  └─────────────────┘
-│                                  │
-│   Snelheid  [uit|laag|▣|hoog|max]│
-│   Pauze              ◯──         │
-│   Backwash        ▸ start        │
-└──────────────────────────────────┘
+┌────────────────────────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│  Zwembad                      ●    │  │  Afdekking       │  │  Verlichting     │
+│                                    │  │                  │  │                  │
+│   Water         30,2 °C   → 30,5   │  │        ▲         │  │        ◯         │
+│   Lucht         21,5 °C            │  │        ■         │  │       uit        │
+│   pH             7,18     → 7,20   │  │        ▼         │  │                  │
+│   Redox           648 mV  → 975    │  │                  │  │  enkelkleurig,   │
+│   Niveau          4,4 cm           │  │   Dicht · 09:21  │  │  geen kleurknop  │
+│   Pomp           Uit               │  └──────────────────┘  └──────────────────┘
+│   Stroom          0,0 A            │
+│                                    │
+│   Snelheid  [uit|laag|mid|hoog|max]│
+│   Pauze                ◯──         │
+│   Backwash          ▸ start        │
+└────────────────────────────────────┘
 ```
+
+De pijl toont de streefwaarde uit `config`. Dat redox ver onder de streefwaarde zit
+(648 tegenover 975) is precies het soort afwijking waar een flow op kan triggeren,
+zonder dat je die grens ergens in Homey hoeft over te typen.
 
 ---
 
@@ -423,6 +573,7 @@ koppelen aan de rest van het huis.
 - **Droogloop-risico gedetecteerd** ⚠️
 - Storing gedetecteerd (klepfout / ongeldige status)
 - Zwembad is offline / weer online
+- Waterniveau wijkt te ver af van het streefniveau
 
 **Condities (en…)**
 
@@ -438,7 +589,7 @@ koppelen aan de rest van het huis.
 - Backwash starten
 - Shockchlorering starten / stoppen
 - Verlichting aan / uit
-- Volgende lichtkleur
+- Volgende lichtkleur *(alleen bij een RGB-lamp)*
 - Filtersnelheid instellen *(uit / laag / midden / hoog / max)*
 - Filterschema 1/2/3 in- of uitschakelen
 - Controller pauzeren / hervatten
@@ -447,7 +598,7 @@ koppelen aan de rest van het huis.
 
 | Flow | Opbouw |
 |---|---|
-| **Filter op midden zolang de afdekking open is** — de documentatie noemt dit expliciet als recept, omdat het zwembad het zelf niet kan | *Wanneer* afdekking geopend → *dan* filtersnelheid midden. *Wanneer* afdekking gesloten → *dan* filtersnelheid laag. |
+| **Filter op midden zolang de afdekking open is** — de documentatie noemt dit expliciet als recept, omdat het zwembad het zelf niet kan | *Wanneer* afdekking geopend → *dan* filtersnelheid midden. *Wanneer* afdekking gesloten → *dan* filtersnelheid laag. De app stuurt hiervoor `pump_speed: "medium"` als tekst, niet `2` zoals de documentatie beweert. |
 | **Droogloopbeveiliging** | *Wanneer* droogloop-risico → *dan* controller pauzeren + push-melding. |
 | **Waterchemie-waarschuwing** | *Wanneer* pH buiten 7,0–7,6 langer dan 2 uur → *dan* melding met de gemeten waarde. |
 | **Zwemmen begint** | *Wanneer* knop ingedrukt → afdekking openen, verlichting aan, filter op midden. |
@@ -493,22 +644,25 @@ bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-prak
    gekoppeld aan dit zwembad. Tot die er is werkt het OAuth-token,
    maar dat is een tijdelijke oplossing — vandaar de dubbele ondersteuning en de
    repair-flow uit [§4.2](#42-authenticatie-twee-methoden-naast-elkaar).
-2. **Hoe lang is het huidige token geldig?** Het is al dagen ongewijzigd, maar dat
-   zegt op zichzelf niets: de vervaldatum staat in het `exp`-veld van het token zelf
-   en is zonder sleutel uit te lezen. Dat één keer controleren scheelt gokken over
-   hoe urgent de key-aanvraag is.
+2. ~~Hoe lang is het huidige token geldig?~~ **Niet vast te stellen.** Het token is
+   geen standaard JWT en draagt geen leesbaar `exp`-veld, dus de vervaldatum is niet
+   te voorspellen. Dat is zelf het antwoord: bouw op de repair-flow en vraag de key aan.
 3. ~~Statuscodes van de afdekking zijn niet gedocumenteerd.~~ **Opgelost**, op één
    punt na: `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand. De code
    voor *volledig open* is nog niet gezien, omdat de test halverwege is gestopt.
    Eén keer helemaal open laten lopen en de status aflezen, dan is ook dat rond.
-4. **`lighting.status.status === 1` is ook een aanname.** Waarschijnlijk is
-   `lighting.config.always_active` de betrouwbaardere bron voor aan/uit.
-5. **Het `FilterConfig`-schema is niet uitgeschreven in de PDF** (het staat achter
-   een ingeklapte "Show Schema"). De exacte veldnamen moeten uit een echte
-   `GET /pool/{pid}/filter` komen — noodzakelijk, omdat `PATCH` het hele object eist.
-6. **Sondetype onbekend**: RX (mV) of CLM (ppm), of allebei. Af te lezen met
-   `pool_test.py raw`, dat nu ook de modules `ph`, `cl`, `temperature` en `filter`
-   toont die `status` wegfilterde.
+4. **Wat betekent `lighting.status.status`?** Nog steeds onduidelijk, en de meetdata
+   maakt het eerder verwarrender: `status` stond op `1` terwijl `always_active` op
+   `false` stond en het tijdschema uit stond. Als `1` "aan" betekende, zou het licht
+   dus aan hebben gestaan zonder dat iets dat verklaart. Te testen door het licht via
+   `PATCH /lighting` aan en uit te zetten en beide velden te vergelijken — meteen ook
+   de eerste veilige schrijftest.
+5. ~~Het `FilterConfig`-schema is niet uitgeschreven in de PDF.~~ **Opgehaald**, zie
+   [§3.2](#het-filterconfig-schema--en-een-fout-in-de-documentatie). Belangrijkste
+   vondst: `pump_speed` is daar een tekst (`"low"`, `"medium"`, …), niet het getal dat
+   de documentatie noemt.
+6. ~~Sondetype onbekend.~~ **Redox (mV)**, geen CLM: `spec.clm_sensor` staat op
+   `false`. De ppm-capability vervalt voor deze installatie.
 8. **Wat is `covco`?** Dat veld staat naast `status` in `cover.status` en bleef op `0`
    staan, ook met een commando in de wachtrij. Het is dus geen echo van het laatste
    commando. Onbekend, en voorlopig niet nodig.
@@ -524,16 +678,18 @@ bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-prak
 |---|---|---|---|
 | 1 | 0.2.0 | Dubbele authenticatie (key + token) met repair-flow. Uitgebreid lezen: pompsnelheid/-status, motorstroom, redox/chloor gesplitst, droogloop-alarm, storingsalarm, online-detectie. Alle triggers en condities. | niets — kan nu |
 | 2 | 0.3.0 | Cover- en light-device, momentane commando's (afdekking, backwash, shock, lichtkleur). | niets — commando's zijn getest |
-| 3 | 0.4.0 | Configuratie via read-modify-write: licht aan/uit, pauze, filtersnelheid en -schema's. | `FilterConfig`-schema bekend |
+| 3 | 0.4.0 | Configuratie via read-modify-write: licht aan/uit, pauze, filtersnelheid en -schema's. | niets — schema is opgehaald |
 | 4 | 1.0.0 | Afronding: vertalingen, app-store-plaatjes, `homey app validate --level publish` in CI. | — |
 
-Fase 1 en 2 kunnen allebei nu al, met het bestaande token — de key is nodig voor
-duurzaam onbeheerd draaien, niet om te kunnen bouwen of testen. De dubbele
-authenticatie zit bewust in fase 1 en niet later: het is het verschil tussen een app
-die blijft werken als het token verloopt en een app die dan stilletjes stopt.
+**Alle drie de fasen kunnen nu.** Er wacht niets meer op informatie: de commando's
+zijn getest, de afdekcodes gemeten, het `FilterConfig`-schema opgehaald en de
+hardware-inventaris staat in `spec`. De API-key is nodig voor duurzaam onbeheerd
+draaien, niet om te kunnen bouwen of testen.
 
-Alleen fase 3 wacht echt ergens op, en dat is met één `GET /pool/{pid}/filter` uit de
-weg geruimd.
+De dubbele authenticatie met repair-flow zit bewust in fase 1 en niet later. Nu
+gebleken is dat de vervaldatum van het token niet te lezen valt, is dat het verschil
+tussen een app die te repareren is en een app die op een willekeurig moment stilvalt
+en je flows meesleept.
 
 ---
 
