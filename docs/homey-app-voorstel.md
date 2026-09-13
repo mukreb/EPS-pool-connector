@@ -37,6 +37,17 @@ route uit dit voorstel werkt — niet alleen op papier:
   zie [§2.5](#statuscodes-van-de-afdekking--gemeten-niet-gedocumenteerd).
 - **Een commando doet er 20 tot 30 seconden over** voordat het in de status zichtbaar
   is. Dat is bepalend voor hoe de app na een commando moet verversen.
+- **De eerste `PATCH` is geslaagd.** `PATCH /pool/{pid}/lighting` met
+  `{"always_active": true}` zette de verlichting daadwerkelijk aan, bevestigd in de
+  mobiele app van de leverancier. Belangrijk detail: de overige velden van die module
+  (`dimming`, `switch_pulse`, `cover_disabled`, `schedule`) bleven ongemoeid. Voor dit
+  endpoint is de kale aan/uit-body dus een echte tweede variant en geen vervanging van
+  het hele object — precies zoals de documentatie beschrijft, en anders dan bij
+  `filter`.
+- **`status` blijkt een pool-brede momentopname** die uren oud kan zijn, terwijl
+  `metrics` en `config` live zijn. Zie
+  [§2.3](#status-is-een-pool-brede-momentopname-en-kan-uren-oud-zijn) — dit raakt
+  elke module en corrigeert een eerdere aanname in dit voorstel.
 - **Het volledige antwoord en de moduleconfiguraties zijn opgehaald.** Daarmee zijn
   het `FilterConfig`-schema, het sondetype en de aanwezige hardware bekend — en kwam
   een fout in de documentatie aan het licht, zie
@@ -164,27 +175,42 @@ en is dus de waarde waar een `target_temperature`-capability op zou moeten aansl
 Code 12 (klepfout) en 15 (ongeldig) zijn kandidaten voor een storingsmelding.
 Code 13 is expliciet als *normaal* gedocumenteerd en moet dus géén alarm geven.
 
-#### `status` en `metrics` zijn niet even vers — niet door elkaar gebruiken
+#### `status` is een pool-brede momentopname en kan uren oud zijn
 
-Dit is de belangrijkste valkuil die uit de meetdata naar boven kwam. Elk moduleblok
-heeft een eigen `timestamp`, en die van `status` en `metrics` lopen uiteen. In één
-meting stond:
+Dit is de belangrijkste vondst uit de metingen, en hij raakt élke module.
 
-| Veld | Waarde | Ouderdom |
+Elk moduleblok heeft een eigen `timestamp`, maar die zijn niet onafhankelijk. In het
+volledige antwoord dragen **alle** `status`-blokken exact dezelfde tijdstempel, en
+**alle** `metrics`-blokken eveneens. Er zijn dus geen tien losse tijdstempels maar
+twee: één voor de hele `status`-sectie en één voor alle `metrics`.
+
+En die twee lopen ver uiteen. In een meting was `metrics` actueel tot op de seconde,
+terwijl de volledige `status`-sectie **137 minuten oud** was. Wat daar stond:
+
+| Veld | Waarde | Werkelijkheid |
 |---|---|---|
-| `filter.status.pump_speed` | 3 (hoog) | ~2 uur oud |
-| `filter.status.pump_status` | 4 (verwarming) | ~2 uur oud |
-| `filter.metrics.pump_speed` | 0 (uit) | vers |
-| `filter.metrics.pump_current` | 0,0 A | vers |
+| `filter.status.pump_speed` | 3 (hoog) | pomp stond stil |
+| `filter.status.pump_status` | 4 (verwarming) | geen verwarming actief |
+| `filter.metrics.pump_speed` | 0 | klopt |
+| `filter.metrics.pump_current` | 0,0 A | klopt |
 
-De pomp stond dus gewoon stil, maar het `status`-blok beweerde nog dat hij op hoog
-liep voor de verwarming. Een app die "draait de pomp?" uit `status` afleidt, toont
-twee uur lang iets onwaars.
+De `status`-sectie ververst bij bepaalde gebeurtenissen, niet op een vaste klok.
+Tijdens het bewegen van de afdekking sprong hij elke paar seconden mee; daarna bleef
+hij ruim twee uur bevroren, ook toen de verlichting via de API werd omgezet.
 
-**`metrics.pump_current` is de betrouwbaarste bron**: stroom loopt of niet. Combineer
-dat met `metrics.pump_speed`, en gebruik `status.pump_status` uitsluitend voor de
-*reden* — met de kanttekening dat die reden achter kan lopen. Vergelijk desnoods de
-twee timestamps en negeer `status` als het te oud is.
+**Wat de app hieruit moet concluderen:**
+
+| Wat je wilt weten | Lees uit | Nooit uit |
+|---|---|---|
+| Meetwaarden (pH, temperatuur, niveau, stroom) | `metrics` | — |
+| Ingestelde toestand (licht aan, pompsnelheid, schema's) | `config` | `status` |
+| Afdekstand | `status` — er is geen alternatief | — |
+| Draait de pomp | `metrics.pump_current` / `metrics.pump_speed` | `status.pump_status` |
+| Waaróm de pomp draait | `status.pump_status`, mét voorbehoud | — |
+
+De afdekking is de uitzondering die het ontwerp redt: juist bij beweging ververst
+`status` wel. Maar een app die "staat het licht aan?" of "draait de pomp?" uit
+`status` haalt, toont uren achter elkaar iets onwaars.
 
 ### 2.4 Droogloopdetectie — de belangrijkste afgeleide waarde
 
@@ -206,9 +232,9 @@ op basis van de geconfigureerde detectiemethode (schoepenrad / direct / druk /
 Modbus-pomp), dus de app hoeft het sensortype niet te kennen.
 
 ⚠️ Let op dat het voorbeeld uit de documentatie `pump_status` uit het `status`-blok
-haalt en `pump_speed` uit `metrics`. Die twee zijn verschillend oud (zie hierboven),
-dus dat mengt een verouderde reden met een verse snelheid. Veiliger is om de
-pompkant op verse velden te baseren:
+haalt en `pump_speed` uit `metrics`. Dat mengt een mogelijk uren oude reden met een
+verse snelheid (zie hierboven), en kan dus zowel vals alarm als gemist alarm geven.
+Baseer de pompkant op verse velden:
 
 ```js
 const pumpOn = filter.metrics.pump_speed > 0 || filter.metrics.pump_current > 0;
@@ -224,7 +250,7 @@ geen betekenis en kun je het beter niet aanmaken.
 | Waarde | API-pad | Capability |
 |---|---|---|
 | Afdekstand | `cover.status.status` | `windowcoverings_state` op het cover-device |
-| Verlichting aan | `lighting.config.always_active` (en/of `lighting.status.status`) | `onoff` op het licht-device |
+| Verlichting aan | `lighting.config.always_active` | `onoff` op het licht-device |
 | Controller gepauzeerd | `GET /pool/{pid}/spec` → `pause` | `onoff.pause` |
 | Online/offline | `GET /pool` → `status` + `activity_at` | `setAvailable()` / `setUnavailable()` |
 
@@ -487,9 +513,16 @@ seconden later zichtbaar, `cmd/cover_close` na ruim 23 seconden. Dat past bij wa
 documentatie zegt: het zwembad voert het commando uit "bij de volgende synchronisatie".
 
 Eén verfrissing na 10 seconden zou de oude waarde teruglezen en de tegel laten
-terugklappen. Beter is een reeks op ongeveer 5, 15, 30 en 45 seconden, die stopt zodra
-`cover.status.timestamp` verspringt — dat veld is de betrouwbare indicatie dat het
-zwembad echt iets nieuws gemeld heeft, en niet dat de app alleen opnieuw gekeken heeft.
+terugklappen. Beter is een reeks op ongeveer 5, 15, 30 en 45 seconden.
+
+Waar je op wacht verschilt per soort commando, en dat is geen detail:
+
+- **Afdekking** (`cmd/cover_*`): wachten tot `cover.status.timestamp` verspringt. Bij
+  beweging ververst de `status`-sectie wél, dus dat werkt.
+- **Verlichting en andere `PATCH`-instellingen**: wachten op `config`, niet op
+  `status`. Bij het omzetten van het licht bleef `status` ruim twee uur onveranderd,
+  terwijl `config.always_active` meteen meebewoog. Een app die hier op `status` wacht,
+  wacht eeuwig en concludeert ten onrechte dat het commando mislukt is.
 
 ### 4.4 Capability-overzicht per device
 
@@ -651,12 +684,12 @@ bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-prak
    punt na: `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand. De code
    voor *volledig open* is nog niet gezien, omdat de test halverwege is gestopt.
    Eén keer helemaal open laten lopen en de status aflezen, dan is ook dat rond.
-4. **Wat betekent `lighting.status.status`?** Nog steeds onduidelijk, en de meetdata
-   maakt het eerder verwarrender: `status` stond op `1` terwijl `always_active` op
-   `false` stond en het tijdschema uit stond. Als `1` "aan" betekende, zou het licht
-   dus aan hebben gestaan zonder dat iets dat verklaart. Te testen door het licht via
-   `PATCH /lighting` aan en uit te zetten en beide velden te vergelijken — meteen ook
-   de eerste veilige schrijftest.
+4. ~~Wat betekent `lighting.status.status`?~~ **Niet meer relevant.** Bij het
+   aanzetten van het licht bleef dat veld op `1` staan terwijl
+   `config.always_active` direct van `false` naar `true` sprong — de hele
+   `status`-sectie was op dat moment ruim twee uur bevroren. `config.always_active`
+   is dus de bron voor aan/uit. Wat `status.status` betekent blijft onbekend, maar de
+   app heeft het niet nodig.
 5. ~~Het `FilterConfig`-schema is niet uitgeschreven in de PDF.~~ **Opgehaald**, zie
    [§3.2](#het-filterconfig-schema--en-een-fout-in-de-documentatie). Belangrijkste
    vondst: `pump_speed` is daar een tekst (`"low"`, `"medium"`, …), niet het getal dat

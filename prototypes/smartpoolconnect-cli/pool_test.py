@@ -81,10 +81,23 @@ def report_expiry(token):
               f"(nog {left.days} dag(en), {left.seconds // 3600} uur).")
 
 
+def module_state(pool, module):
+    """Alles van een module behalve metrics.
+
+    Het status-blok is een pool-brede momentopname die alleen bij bepaalde
+    gebeurtenissen ververst en uren oud kan zijn; config verandert wel direct na
+    een PATCH. Daarom kijken we naar allebei. Metrics blijft buiten beschouwing,
+    want daar tikt de timestamp continu door.
+    """
+    block = dict(((pool or {}).get(module) or {}))
+    block.pop("metrics", None)
+    return block
+
+
 def snapshot(api, key, path, module):
     pool = api("GET", path, key, quiet=True)
-    before = ((pool or {}).get(module) or {}).get("status")
-    print(f"Voor:  {module}.status = {json.dumps(before, ensure_ascii=False)}")
+    before = module_state(pool, module)
+    print(f"Voor:  {module} = {json.dumps(before, ensure_ascii=False)}")
     return before
 
 
@@ -96,7 +109,7 @@ def watch_module(api, key, path, module, before, timeout=180, interval=10):
     bewegen, pas later de eindstand. Daarom loopt dit door tot de tijd om is;
     onderbreek met Ctrl+C zodra je genoeg gezien hebt.
     """
-    print(f"Volgen van {module}.status, elke {interval}s tot {timeout}s. "
+    print(f"Volgen van {module} (status + config), elke {interval}s tot {timeout}s. "
           f"Ctrl+C om te stoppen.")
     started = time.monotonic()
     current = before
@@ -108,7 +121,7 @@ def watch_module(api, key, path, module, before, timeout=180, interval=10):
                 break
             time.sleep(min(interval, remaining))
             pool = api("GET", path, key, quiet=True)
-            now = ((pool or {}).get(module) or {}).get("status")
+            now = module_state(pool, module)
             elapsed = round(time.monotonic() - started)
             if now != current:
                 changes += 1

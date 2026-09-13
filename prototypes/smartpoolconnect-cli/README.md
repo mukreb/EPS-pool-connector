@@ -59,7 +59,9 @@ python3 pool_test.py close
 
 Een commando wordt pas bij de volgende synchronisatie verwerkt. Gemeten duurt dat **20 tot 30 seconden**, dus een `status` direct na een commando toont nog de oude toestand. Plak commando's daarom niet als één blok in je terminal.
 
-Met `--watch` doet het script het wachten voor je: het leest de status vóór het commando, verstuurt het, en pollt daarna elke 10 seconden tot 180 seconden lang, met een melding bij elke wijziging. Ctrl+C stopt het zodra je genoeg gezien hebt.
+Met `--watch` doet het script het wachten voor je: het leest de module vóór het commando, verstuurt het, en pollt daarna elke 10 seconden tot 180 seconden lang, met een melding bij elke wijziging. Ctrl+C stopt het zodra je genoeg gezien hebt.
+
+Het vergelijkt `status` én `config`, en dat is nodig. Het `status`-blok is een pool-brede momentopname die alleen bij bepaalde gebeurtenissen ververst en uren oud kan zijn; `config` verandert direct na een `PATCH`. Bij het aanzetten van de verlichting bleef `status` onveranderd terwijl `config.always_active` meteen omsprong — wie alleen naar `status` kijkt, concludeert ten onrechte dat er niets gebeurd is. `metrics` blijft buiten de vergelijking, want daar tikt de tijdstempel continu door.
 
 ```bash
 python3 pool_test.py light on --watch
@@ -95,6 +97,12 @@ Een SmartPoolConnect-key is aan te vragen via api-support@smartpoolconnect.eu. V
 Deze test gebruikt de nieuwe API op `https://api.smartpoolconnect.eu`, met `X-API-Key` en een lege `POST /pool/{pid}/cmd/cover_open`, `cover_stop` of `cover_close`. De bestaande `eps`-connector gebruikt de oudere SmartPoolControl-API.
 
 Volgens de aangeleverde JSON/PDF werken deze commando's voor hardware v1/v2; v3 geeft `Unsupported version`. HTTP 200 betekent dat het commando in de wachtrij staat. Pas na synchronisatie kan de afdekking bewegen. Controleer de beweging zelf en lees daarna `status` opnieuw. Een geslaagde test bewijst alleen deze lees- en afdekfuncties, niet de volledige API.
+
+### `status` is pool-breed en kan uren oud zijn
+
+In het volledige antwoord dragen alle `status`-blokken exact dezelfde tijdstempel, en alle `metrics`-blokken eveneens. Het zijn dus niet tien losse tijdstempels maar twee. Gemeten op 13 september 2026 was `metrics` actueel tot op de seconde terwijl de hele `status`-sectie 137 minuten oud was: die meldde een pomp op hoog voor de verwarming, terwijl `metrics` 0 toeren en 0,0 A gaf.
+
+Lees meetwaarden dus uit `metrics`, ingestelde toestand uit `config`, en gebruik `status` alleen waar er geen alternatief is — in de praktijk de afdekstand. Juist bij het bewegen van de afdekking ververst `status` wel.
 
 ### Gemeten afdekstatuscodes
 
