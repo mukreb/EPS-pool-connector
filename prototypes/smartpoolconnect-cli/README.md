@@ -59,7 +59,7 @@ python3 pool_test.py close
 
 Een commando wordt pas bij de volgende synchronisatie verwerkt. Gemeten duurt dat **20 tot 30 seconden**, dus een `status` direct na een commando toont nog de oude toestand. Plak commando's daarom niet als één blok in je terminal.
 
-Met `--watch` doet het script het wachten voor je: het leest de module vóór het commando, verstuurt het, en pollt daarna elke 10 seconden tot 180 seconden lang, met een melding bij elke wijziging. Ctrl+C stopt het zodra je genoeg gezien hebt.
+Met `--watch` doet het script het wachten voor je: het leest de module vóór het commando, verstuurt het, en pollt daarna elke 5 seconden, met een melding bij elke wijziging. Ctrl+C stopt het zodra je genoeg gezien hebt.
 
 Het vergelijkt `status` én `config`, en dat is nodig. Het `status`-blok is een pool-brede momentopname die alleen bij bepaalde gebeurtenissen ververst en uren oud kan zijn; `config` verandert direct na een `PATCH`. Bij het aanzetten van de verlichting bleef `status` onveranderd terwijl `config.always_active` meteen omsprong — wie alleen naar `status` kijkt, concludeert ten onrechte dat er niets gebeurd is. `metrics` blijft buiten de vergelijking, want daar tikt de tijdstempel continu door.
 
@@ -118,7 +118,7 @@ De documentatie vertaalt de codes in `cover.status.status` niet. Op 13 september
 | 4 | Aan het sluiten |
 | 5 | Gestopt in tussenstand |
 
-De afdekking doet er ruim zes minuten over om van dicht naar open te lopen (gemeten: 363 seconden van code `3` naar code `1`). Omdat het status-blok alleen bij gebeurtenissen ververst, kan een al geopende afdekking daarna nog een tijd als `3` gerapporteerd blijven.
+De afdekking doet er ruim zes minuten over om van dicht naar open te lopen (gemeten: 363 seconden van code `3` naar code `1`), en krap drie minuten om te sluiten (173 seconden van `4` naar `2`). Openen duurt hier dus ruim twee keer zo lang als sluiten; reken niet met één vaste wachttijd. Omdat het status-blok alleen bij gebeurtenissen ververst, kan een al geopende afdekking daarna nog een tijd als `3` gerapporteerd blijven.
 
 Reken op **20 tot 30 seconden** tussen het versturen van een commando en het moment dat de nieuwe status zichtbaar is. Gebruik `cover.status.timestamp` om te zien of het zwembad echt iets nieuws gemeld heeft: dat veld verspringt pas bij een echte statuswijziging, terwijl `activity_at` bij vrijwel elk verzoek meebeweegt.
 

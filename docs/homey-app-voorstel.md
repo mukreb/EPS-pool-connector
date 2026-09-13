@@ -192,13 +192,6 @@ twee: één voor de hele `status`-sectie en één voor alle `metrics`.
 En die twee lopen ver uiteen. In een meting was `metrics` actueel tot op de seconde,
 terwijl de volledige `status`-sectie **137 minuten oud** was. Wat daar stond:
 
-| Veld | Waarde | Werkelijkheid |
-|---|---|---|
-| `filter.status.pump_speed` | 3 (hoog) | pomp stond stil |
-| `filter.status.pump_status` | 4 (verwarming) | geen verwarming actief |
-| `filter.metrics.pump_speed` | 0 | klopt |
-| `filter.metrics.pump_current` | 0,0 A | klopt |
-
 De `status`-sectie ververst bij bepaalde gebeurtenissen, niet op een vaste klok.
 Tijdens het bewegen van de afdekking sprong hij elke paar seconden mee; daarna bleef
 hij ruim twee uur bevroren, ook toen de verlichting via de API werd omgezet.
@@ -211,17 +204,47 @@ maken hebben.
 
 **Wat de app hieruit moet concluderen:**
 
-| Wat je wilt weten | Lees uit | Nooit uit |
-|---|---|---|
-| Meetwaarden (pH, temperatuur, niveau, stroom) | `metrics` | — |
-| Ingestelde toestand (licht aan, pompsnelheid, schema's) | `config` | `status` |
-| Afdekstand | `status` — er is geen alternatief | — |
-| Draait de pomp | `metrics.pump_current` / `metrics.pump_speed` | `status.pump_status` |
-| Waaróm de pomp draait | `status.pump_status`, mét voorbehoud | — |
+| Wat je wilt weten | Lees uit |
+|---|---|
+| Meetwaarden (pH, temperatuur, niveau) | `metrics` |
+| Ingestelde toestand (licht aan, schema's, streefwaarden) | `config` |
+| Afdekstand | `status` — geen alternatief, en ververst juist bij beweging |
+| Pompstand | `status` — zie de waarschuwing hieronder |
 
-De afdekking is de uitzondering die het ontwerp redt: juist bij beweging ververst
-`status` wel. Maar een app die "staat het licht aan?" of "draait de pomp?" uit
-`status` haalt, toont uren achter elkaar iets onwaars.
+#### ⚠️ `filter.metrics` lijkt niet gevuld te worden
+
+Dit is een correctie op een eerdere versie van dit voorstel, dat `metrics` als de
+betrouwbare pompbron aanwees. Over vier metingen verspreid over ruim twee uur:
+
+| Meting | `status.pump_speed` | `status.pump_status` | `metrics.pump_speed` | `metrics.pump_current` |
+|---|---|---|---|---|
+| in rust | 3 (hoog) | 4 (verwarming) | 0 | 0,0 A |
+| licht aan | 3 (hoog) | 4 (verwarming) | 0 | 0,0 A |
+| afdekking opent | 0 | 11 (afdekking) | 0 | 0,0 A |
+| afdekking open | 3 (hoog) | 3 (schema 3) | 0 | 0,0 A |
+
+`metrics` staat **altijd** op nul, ook op momenten dat `status` meldt dat de pomp op
+schema 3 op hoog draait — en schema 3 staat bij deze installatie dagelijks van 00:00
+tot 23:55 aan. Ondertussen vertellen de `status`-waarden wél een samenhangend verhaal:
+hoog voor verwarming, dan stil tijdens het bewegen van de afdekking, dan hoog op
+schema 3.
+
+De conclusie ligt om: op deze installatie zijn `filter.metrics.pump_speed` en
+`pump_current` kennelijk niet aangesloten, en is `filter.status` de enige bron voor de
+pompstand — mét het voorbehoud dat die kan achterlopen.
+
+**Dat raakt de droogloopdetectie hard.** De formule uit de documentatie eist
+`metrics.pump_speed > 0`, en die voorwaarde wordt hier nooit waar. Het alarm zou dus
+stilletjes nooit afgaan. Zie [§2.4](#24-droogloopdetectie--de-belangrijkste-afgeleide-waarde).
+
+Te bevestigen: lees `raw` op een moment dat je de filterpomp hoort draaien. Blijft
+`metrics.pump_current` dan nog 0,0 dan is het zeker.
+
+#### Een tweede `pump_current`
+
+`temperature.metrics.pump_current` is een ander veld dan dat in `filter.metrics`, en
+dat wérkt wel: het sprong van 0,0 naar 8,2 A. Gezien `heating_type: "vbiv"` gaat dat
+vermoedelijk over de verwarmingskant, niet de filterpomp. Niet door elkaar halen.
 
 ### 2.4 Droogloopdetectie — de belangrijkste afgeleide waarde
 
@@ -242,14 +265,19 @@ met een bijbehorende flow-trigger. De firmware bepaalt zelf of er doorstroming i
 op basis van de geconfigureerde detectiemethode (schoepenrad / direct / druk /
 Modbus-pomp), dus de app hoeft het sensortype niet te kennen.
 
-⚠️ Let op dat het voorbeeld uit de documentatie `pump_status` uit het `status`-blok
-haalt en `pump_speed` uit `metrics`. Dat mengt een mogelijk uren oude reden met een
-verse snelheid (zie hierboven), en kan dus zowel vals alarm als gemist alarm geven.
-Baseer de pompkant op verse velden:
+⚠️ **De formule uit de documentatie werkt hier niet.** Die eist
+`metrics.pump_speed > 0`, en dat veld stond in elke meting op 0 — zie de waarschuwing
+hierboven. Het alarm zou dus nooit afgaan, zonder dat iets dat verraadt. Beide helften
+moeten daarom uit `status` komen:
 
 ```js
-const pumpOn = filter.metrics.pump_speed > 0 || filter.metrics.pump_current > 0;
+const pumpOn = filter.status.pump_speed > 0 && filter.status.pump_status > 0;
 ```
+
+Nadeel: die sectie kan achterlopen, dus het alarm kan te laat komen. Zolang
+`filter.metrics` niet gevuld wordt, is er geen betere bron. Wordt dat veld op een
+andere installatie wél gevuld, gebruik het dan — de app kan dat zelf vaststellen door
+te kijken of `metrics.pump_current` ooit van nul afwijkt.
 
 Wat overeind blijft is de vergelijking zelf: pomp aan én een doseerkanaal dat geen
 doorstroming meldt. `spec.flow_alarm` geeft daarnaast aan of het zwembad
@@ -289,8 +317,13 @@ de twee bewegingen, en `5` de onderbroken tussenstand.
 
 #### De looptijd is minuten, niet seconden
 
-Van `3` naar `1` zat **363 seconden — ruim zes minuten**. Dat is een eigenschap van de
-installatie, geen API-vertraging, maar het bepaalt wel hoe de app zich moet gedragen:
+Van `3` naar `1` zat **363 seconden — ruim zes minuten**. Sluiten ging sneller: van
+`4` naar `2` in **173 seconden**, krap drie minuten. Openen duurt hier dus ruim twee
+keer zo lang als sluiten.
+
+Dat is een eigenschap van de installatie, geen API-vertraging, maar het bepaalt wel
+hoe de app zich moet gedragen — en de asymmetrie betekent dat je niet met één vaste
+wachttijd kunt werken:
 
 - Een afdekcommando is niet "klaar" na een halve minuut. De eindstand komt minuten
   later binnen via de gewone pollcyclus, niet via de korte verversing direct na het
@@ -300,7 +333,7 @@ installatie, geen API-vertraging, maar het bepaalt wel hoe de app zich moet gedr
   `status`-sectie ververst pas bij een volgende gebeurtenis, dus een al geopende
   afdekking kan nog even als "aan het openen" in beeld staan.
 - Een flow die de afdekking opent en daarna iets anders wil doen, moet wachten op
-  `status == 1`, niet op het uitblijven van een foutmelding.
+  `status == 1`, niet op het uitblijven van een foutmelding en niet op een timer.
 
 #### Er is geen standpercentage
 
@@ -751,13 +784,13 @@ bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-prak
    te voorspellen. Dat is zelf het antwoord: bouw op de repair-flow en vraag de key aan.
 3. ~~Statuscodes van de afdekking zijn niet gedocumenteerd.~~ **Volledig opgelost**:
    `1` open, `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand.
-4. **Wat betekent `lighting.status.status`?** Waarschijnlijk gewoon aan/uit, maar
-   onbruikbaar als bron. Bij het omzetten van het licht leek dat veld niet te
-   reageren; dat kwam doordat de hele `status`-sectie toen twee uur bevroren stond.
-   Zodra die sectie wél ververste, stond er `0` bij een uitgeschakeld licht — wat
-   past bij `1` = aan. Maar omdat het blok alleen bij gebeurtenissen ververst, kan het
-   uren achterlopen. **`config.always_active` blijft de bron** voor aan/uit; die
-   beweegt binnen 10 seconden mee.
+4. **Wat betekent `lighting.status.status`? Onbekend, en in elk geval niet aan/uit.**
+   Een meetreeks met verse tijdstempels gaf de waarden `0`, `1` en `2`, waarbij `2`
+   zowel voorkwam met het licht uit als met het licht aan, en `0` eveneens in beide
+   gevallen. Er is dus geen aan/uit-betekenis uit af te leiden. Mogelijk hangt het
+   samen met de pulsschakeling (`switch_pulse: 250` op een enkelkleurige lamp), maar
+   dat is speculatie. **`config.always_active` is de bron** voor aan/uit; die beweegt
+   binnen 10 seconden mee en klopte in beide richtingen.
 5. ~~Het `FilterConfig`-schema is niet uitgeschreven in de PDF.~~ **Opgehaald**, zie
    [§3.2](#het-filterconfig-schema--en-een-fout-in-de-documentatie). Belangrijkste
    vondst: `pump_speed` is daar een tekst (`"low"`, `"medium"`, …), niet het getal dat

@@ -23,16 +23,21 @@ design.
 | Ambient temperature (°C) | `temperature.metrics.ambient_temp` |
 | pH | `ph.metrics.actual` |
 | Chlorine (mV) | `cl.metrics.actual` |
-| Filter pump (on/off) | `filter.metrics.pump_speed` / `pump_current` |
+| Filter pump (on/off) | `filter.status.pump_speed` |
 | Lighting (on/off) | `lighting.config.always_active` |
 | Deck cover (open / closed / opening / closing / stopped) | `cover.status.status` |
 
-Readings come from `metrics` and `config`, never from `status`. The `status`
+Prefer `metrics` for measurements and `config` for settings. The `status`
 section is a single pool-wide snapshot shared by every module that only
 refreshes when the pool reports an event, and it was measured at over two hours
-stale — still claiming the pump ran at high speed while it drew 0.0 A. The one
-exception is the cover position, which has no other source and does refresh
-while the cover moves.
+stale, so it is the last resort rather than the default.
+
+It is still the only source for two things. The cover position has no
+alternative, and does refresh while the cover moves. And the filter pump state
+has to come from `filter.status.pump_speed`, because
+`filter.metrics.pump_speed` and `pump_current` read 0 in every sample taken —
+including while `filter.status` reported the pump running on schedule 3 — so
+those fields appear not to be populated on this installation.
 
 The cover status codes are not documented by the API. They were measured on
 13-09-2026 by moving the cover and reading `cover.status.status`: `1` open,

@@ -74,10 +74,12 @@ class PoolDevice extends Homey.Device {
     const ambient = pool?.temperature?.metrics?.ambient_temp;
     const ph = pool?.ph?.metrics?.actual;
     const cl = pool?.cl?.metrics?.actual;
-    // Het status-blok is een pool-brede momentopname die alleen bij gebeurtenissen
-    // ververst en uren oud kan zijn; metrics en config zijn wel actueel.
-    const pumpSpeed = pool?.filter?.metrics?.pump_speed;
-    const pumpCurrent = pool?.filter?.metrics?.pump_current;
+    // filter.metrics.pump_speed en pump_current stonden in elke meting op 0, ook
+    // terwijl filter.status meldde dat de pomp op schema 3 draaide. Die velden lijken
+    // op deze installatie niet gevuld te worden, dus komt de pompstand uit status.
+    // Dat blok is een pool-brede momentopname die alleen bij gebeurtenissen ververst
+    // en dus kan achterlopen; een betere bron is er voorlopig niet.
+    const pumpSpeed = pool?.filter?.status?.pump_speed;
     const lighting = pool?.lighting?.config?.always_active;
     const cover = pool?.cover?.status?.status;
 
@@ -86,9 +88,8 @@ class PoolDevice extends Homey.Device {
     await this._setIfNumber('measure_ph', ph);
     await this._setIfNumber('measure_chlorine', cl);
 
-    if (typeof pumpSpeed === 'number' || typeof pumpCurrent === 'number') {
-      const running = (pumpSpeed > 0) || (pumpCurrent > 0);
-      await this.setCapabilityValue('filter_running', running).catch(this.error);
+    if (typeof pumpSpeed === 'number') {
+      await this.setCapabilityValue('filter_running', pumpSpeed > 0).catch(this.error);
     }
     if (typeof lighting === 'boolean') {
       await this.setCapabilityValue('lighting_on', lighting).catch(this.error);

@@ -101,7 +101,7 @@ def snapshot(api, key, path, module):
     return before
 
 
-def watch_module(api, key, path, module, before, timeout=420, interval=10):
+def watch_module(api, key, path, module, before, timeout=420, interval=5):
     """Volg het statusblok van een module en meld elke wijziging.
 
     Commando's worden pas bij de volgende synchronisatie verwerkt, dus reken op
