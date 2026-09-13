@@ -53,6 +53,8 @@ python3 pool_test.py close
 
 `status` toont bewust maar een handvol velden (`pid`, `name`, `version`, `status`, `activity_at`, `cover`). Gebruik `raw` voor het volledige, ongefilterde antwoord van `GET /pool/{pid}` — daar staan ook de modules `ph`, `cl`, `temperature`, `filter` en `lighting` in.
 
+`light on` en `light off` schakelen de verlichting via `PATCH /pool/{pid}/lighting` met `{"always_active": true|false}`. Dit is de eerste schrijfactie in dit script die een body verstuurt. De documentatie staat voor dít endpoint expliciet een kale aan/uit-body toe; andere modules eisen het volledige configuratie-object, dus kopieer deze aanpak niet zomaar naar `filter` of `spec`. Met `--dry-run` zie je de body zonder iets te versturen. Let op: `always_active: false` geeft de besturing terug aan een eventueel ingesteld tijdschema; staat dat uit, dan gaat het licht uit.
+
 `config <module>` haalt de configuratie van één module op via `GET /pool/{pid}/{module}`, bijvoorbeeld `config filter`, `config cover`, `config lighting` of `config spec`. Dat is de manier om de veldnamen te zien die je nodig hebt voor een `PATCH`: die vervangt het hele object, dus je moet elk veld terugsturen.
 
 Bij gebruik van een token of sessiecookie drukt het script de vervaldatum van het token af (het `exp`-veld uit de JWT-payload). Zo weet je hoe lang de sessie nog bruikbaar is in plaats van te moeten afwachten.

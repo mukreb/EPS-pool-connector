@@ -98,11 +98,15 @@ def settings():
     return values
 
 
-def request(method, path, key, *, bearer=False):
+def request(method, path, key, *, bearer=False, body=None):
     headers = {"Accept": "application/json"}
     headers.update({"Authorization": "Bearer " + key} if bearer else {"X-API-Key": key})
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
     req = Request(BASE_URL + path, method=method,
-                  headers=headers)
+                  headers=headers, data=data)
     try:
         with build_opener(NoRedirect()).open(req, timeout=20) as response:
             body = response.read().decode("utf-8")
@@ -127,9 +131,11 @@ def request(method, path, key, *, bearer=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["list", "status", "raw", "config", *COMMANDS])
-    parser.add_argument("module", nargs="?",
-                        help=f"Alleen bij config: welke module ({MODULES_HINT})")
+    parser.add_argument("action",
+                        choices=["list", "status", "raw", "config", "light", *COMMANDS])
+    parser.add_argument("arg", nargs="?",
+                        help=f"Bij config: welke module ({MODULES_HINT}). "
+                             "Bij light: on of off.")
     parser.add_argument("--pid", help="Pool UUID; anders zoeken op SPC_MAC/EPS_SERIAL")
     parser.add_argument("--dry-run", action="store_true", help="Wel uitlezen, geen commando sturen")
     auth = parser.add_mutually_exclusive_group()
@@ -183,13 +189,28 @@ def main():
         print(json.dumps(api("GET", path, key), indent=2, ensure_ascii=False))
         return
     if args.action == "config":
-        if not args.module:
+        if not args.arg:
             raise RuntimeError("Geef een module mee, bijvoorbeeld: config filter. "
                                f"Bekend: {MODULES_HINT}.")
-        if not MODULE_RE.match(args.module):
+        if not MODULE_RE.match(args.arg):
             raise RuntimeError("Ongeldige modulenaam; gebruik bijvoorbeeld filter of aux/1.")
-        print(json.dumps(api("GET", path + "/" + args.module, key),
+        print(json.dumps(api("GET", path + "/" + args.arg, key),
                          indent=2, ensure_ascii=False))
+        return
+    if args.action == "light":
+        state = (args.arg or "").lower()
+        if state not in ("on", "off"):
+            raise RuntimeError("Gebruik: light on  of  light off.")
+        # De documentatie staat voor dit endpoint expliciet een kale aan/uit-body toe;
+        # andere modules eisen het volledige configuratie-object.
+        body = {"always_active": state == "on"}
+        if args.dry_run:
+            print(f"DRY RUN: PATCH {BASE_URL}{path}/lighting "
+                  f"body {json.dumps(body)} (niets verstuurd)")
+            return
+        api("PATCH", path + "/lighting", key, body=body)
+        print("Verlichting aangepast. Lees daarna status of config lighting opnieuw "
+              "om te zien welke velden meebewegen.")
         return
     path += "/cmd/" + COMMANDS[args.action]
     if args.dry_run:
