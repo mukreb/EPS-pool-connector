@@ -317,21 +317,31 @@ de twee bewegingen, en `5` de onderbroken tussenstand.
 
 #### De looptijd is minuten, niet seconden
 
-Van `3` naar `1` zat **363 seconden — ruim zes minuten**. Sluiten ging sneller: van
-`4` naar `2` in **173 seconden**, krap drie minuten. Openen duurt hier dus ruim twee
-keer zo lang als sluiten.
+De afdekking doet er in werkelijkheid **ongeveer 180 seconden** over, zowel openen als
+sluiten. Dat is fysiek nagemeten.
 
-Dat is een eigenschap van de installatie, geen API-vertraging, maar het bepaalt wel
-hoe de app zich moet gedragen — en de asymmetrie betekent dat je niet met één vaste
-wachttijd kunt werken:
+De API-tijdstempels suggereerden iets anders, en dat is zelf een les. Tussen de
+tijdstempel van `3` (openen) en die van `1` (open) zat 363 seconden, tussen `4` en `2`
+maar 173. Daaruit leek te volgen dat openen twee keer zo lang duurt als sluiten. Dat
+klopt niet.
 
-- Een afdekcommando is niet "klaar" na een halve minuut. De eindstand komt minuten
-  later binnen via de gewone pollcyclus, niet via de korte verversing direct na het
-  commando.
+⚠️ **Een `status.timestamp` is het moment van de momentopname, niet het moment waarop
+de gebeurtenis plaatsvond.** Omdat die sectie alleen bij gebeurtenissen ververst, kan
+er tijd zitten tussen "de afdekking is klaar" en "de API meldt dat". Duur berekenen
+uit twee tijdstempels geeft dus een bovengrens, geen looptijd.
+
+Voor de app maakt het weinig uit — die moet toch op de eindstand wachten en niet op
+een klok — maar het is precies het soort afleiding waar je een verkeerde conclusie uit
+trekt. Ik ben er zelf in getrapt.
+
+Wat er wél uit volgt:
+
+- Een afdekcommando is niet "klaar" na een halve minuut; reken op minuten. De
+  eindstand komt binnen via de gewone pollcyclus, niet via de korte verversing direct
+  na het commando.
 - Tussendoor blijft de stand `3` of `4`. De app moet die weergeven als *beweegt*, maar
-  er niet uit afleiden dat er nog iets loopt zodra er minuten overheen zijn — de
-  `status`-sectie ververst pas bij een volgende gebeurtenis, dus een al geopende
-  afdekking kan nog even als "aan het openen" in beeld staan.
+  er niet uit afleiden dat er nú nog iets beweegt — een al geopende afdekking kan nog
+  even als "aan het openen" in beeld staan.
 - Een flow die de afdekking opent en daarna iets anders wil doen, moet wachten op
   `status == 1`, niet op het uitblijven van een foutmelding en niet op een timer.
 

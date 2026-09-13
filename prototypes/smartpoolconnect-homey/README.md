@@ -43,9 +43,10 @@ The cover status codes are not documented by the API. They were measured on
 13-09-2026 by moving the cover and reading `cover.status.status`: `1` open,
 `2` closed, `3` opening, `4` closing, `5` stopped part-way.
 
-Note that the cover takes about six minutes to travel end to end, and that
-`cover.status` only refreshes when the pool reports an event. A cover that has
-finished opening can therefore still read as `opening` for a while.
+The cover takes about 180 seconds to travel end to end, in either direction.
+Note that `cover.status` only refreshes when the pool reports an event, so a
+cover that has finished opening can still read as `opening` for a while, and the
+gap between two status timestamps is an upper bound rather than a travel time.
 
 Polling interval is configurable per device (15–300 s, default 30 s).
 At default settings the app makes ~2 requests per minute, well under the

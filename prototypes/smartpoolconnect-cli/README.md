@@ -118,7 +118,9 @@ De documentatie vertaalt de codes in `cover.status.status` niet. Op 13 september
 | 4 | Aan het sluiten |
 | 5 | Gestopt in tussenstand |
 
-De afdekking doet er ruim zes minuten over om van dicht naar open te lopen (gemeten: 363 seconden van code `3` naar code `1`), en krap drie minuten om te sluiten (173 seconden van `4` naar `2`). Openen duurt hier dus ruim twee keer zo lang als sluiten; reken niet met één vaste wachttijd. Omdat het status-blok alleen bij gebeurtenissen ververst, kan een al geopende afdekking daarna nog een tijd als `3` gerapporteerd blijven.
+De afdekking doet er ongeveer 180 seconden over, zowel openen als sluiten (fysiek nagemeten). Reken bij `--watch` dus op minuten.
+
+Let op: de tijd tussen twee `status.timestamp`-waarden is géén looptijd. Het status-blok ververst alleen bij gebeurtenissen, dus de tijdstempel van de eindstand kan later liggen dan het moment waarop de afdekking klaar was. Zo leek openen 363 seconden te duren en sluiten 173, terwijl beide in werkelijkheid rond de 180 liggen. Om dezelfde reden kan een al geopende afdekking nog een tijd als `3` gerapporteerd blijven.
 
 Reken op **20 tot 30 seconden** tussen het versturen van een commando en het moment dat de nieuwe status zichtbaar is. Gebruik `cover.status.timestamp` om te zien of het zwembad echt iets nieuws gemeld heeft: dat veld verspringt pas bij een echte statuswijziging, terwijl `activity_at` bij vrijwel elk verzoek meebeweegt.
 
