@@ -55,6 +55,19 @@ python3 pool_test.py close
 
 `status` toont bewust maar een handvol velden (`pid`, `name`, `version`, `status`, `activity_at`, `cover`). Gebruik `raw` voor het volledige, ongefilterde antwoord van `GET /pool/{pid}` — daar staan ook de modules `ph`, `cl`, `temperature`, `filter` en `lighting` in.
 
+### Wachten op het effect: `--watch`
+
+Een commando wordt pas bij de volgende synchronisatie verwerkt. Gemeten duurt dat **20 tot 30 seconden**, dus een `status` direct na een commando toont nog de oude toestand. Plak commando's daarom niet als één blok in je terminal.
+
+Met `--watch` doet het script het wachten voor je: het leest de status vóór het commando, verstuurt het, en pollt daarna elke 10 seconden tot 180 seconden lang, met een melding bij elke wijziging. Ctrl+C stopt het zodra je genoeg gezien hebt.
+
+```bash
+python3 pool_test.py light on --watch
+python3 pool_test.py open --watch
+```
+
+Bij de afdekking zie je meerdere overgangen: eerst het bewegen (`3`), pas aan het eind van de loop de eindstand. Daarom stopt het volgen niet bij de eerste wijziging.
+
 `light on` en `light off` schakelen de verlichting via `PATCH /pool/{pid}/lighting` met `{"always_active": true|false}`. Dit is de eerste schrijfactie in dit script die een body verstuurt. De documentatie staat voor dít endpoint expliciet een kale aan/uit-body toe; andere modules eisen het volledige configuratie-object, dus kopieer deze aanpak niet zomaar naar `filter` of `spec`. Met `--dry-run` zie je de body zonder iets te versturen. Let op: `always_active: false` geeft de besturing terug aan een eventueel ingesteld tijdschema; staat dat uit, dan gaat het licht uit.
 
 `config <module>` haalt de configuratie van één module op via `GET /pool/{pid}/{module}`, bijvoorbeeld `config filter`, `config cover`, `config lighting` of `config spec`. Dat is de manier om de veldnamen te zien die je nodig hebt voor een `PATCH`: die vervangt het hele object, dus je moet elk veld terugsturen.

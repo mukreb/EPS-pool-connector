@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,8 @@ BASE_URL = "https://api.smartpoolconnect.eu"
 COMMANDS = {"open": "cover_open", "close": "cover_close", "stop": "cover_stop"}
 MODULES_HINT = "filter, cover, lighting, spec, ph, cl, temperature, level"
 MODULE_RE = re.compile(r"^[a-z0-9_]+(?:/[a-z0-9_-]+)?$")
+# Welke module je na een commando in de gaten wilt houden.
+WATCH_MODULE = {"light": "lighting", "open": "cover", "close": "cover", "stop": "cover"}
 
 
 def hidden_input(prompt):
@@ -78,6 +81,50 @@ def report_expiry(token):
               f"(nog {left.days} dag(en), {left.seconds // 3600} uur).")
 
 
+def snapshot(api, key, path, module):
+    pool = api("GET", path, key, quiet=True)
+    before = ((pool or {}).get(module) or {}).get("status")
+    print(f"Voor:  {module}.status = {json.dumps(before, ensure_ascii=False)}")
+    return before
+
+
+def watch_module(api, key, path, module, before, timeout=180, interval=10):
+    """Volg het statusblok van een module en meld elke wijziging.
+
+    Commando's worden pas bij de volgende synchronisatie verwerkt, dus reken op
+    tientallen seconden. Bij de afdekking zie je meerdere overgangen: eerst het
+    bewegen, pas later de eindstand. Daarom loopt dit door tot de tijd om is;
+    onderbreek met Ctrl+C zodra je genoeg gezien hebt.
+    """
+    print(f"Volgen van {module}.status, elke {interval}s tot {timeout}s. "
+          f"Ctrl+C om te stoppen.")
+    started = time.monotonic()
+    current = before
+    changes = 0
+    try:
+        while True:
+            remaining = timeout - (time.monotonic() - started)
+            if remaining <= 0:
+                break
+            time.sleep(min(interval, remaining))
+            pool = api("GET", path, key, quiet=True)
+            now = ((pool or {}).get(module) or {}).get("status")
+            elapsed = round(time.monotonic() - started)
+            if now != current:
+                changes += 1
+                current = now
+                print(f"  +{elapsed:>3}s  {json.dumps(now, ensure_ascii=False)}"
+                      f"   <-- wijziging {changes}")
+            else:
+                print(f"  +{elapsed:>3}s  (ongewijzigd)")
+    except KeyboardInterrupt:
+        print("\nOnderbroken.")
+    if changes == 0:
+        print("Geen wijziging gezien. Het commando kan alsnog verwerkt worden; "
+              "lees later opnieuw status.")
+    return current
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None  # Stuur de API-key nooit door naar een andere URL.
@@ -98,7 +145,7 @@ def settings():
     return values
 
 
-def request(method, path, key, *, bearer=False, body=None):
+def request(method, path, key, *, bearer=False, body=None, quiet=False):
     headers = {"Accept": "application/json"}
     headers.update({"Authorization": "Bearer " + key} if bearer else {"X-API-Key": key})
     data = None
@@ -110,7 +157,8 @@ def request(method, path, key, *, bearer=False, body=None):
     try:
         with build_opener(NoRedirect()).open(req, timeout=20) as response:
             body = response.read().decode("utf-8")
-            print(f"HTTP {response.status} — {method} {path}")
+            if not quiet:
+                print(f"HTTP {response.status} — {method} {path}")
     except HTTPError as exc:
         hints = {401: "API-key of toegangstoken ongeldig/verlopen.",
                  403: "Geen toegang of onvoldoende scopes (pools:read / controls:write).",
@@ -138,6 +186,8 @@ def main():
                              "Bij light: on of off.")
     parser.add_argument("--pid", help="Pool UUID; anders zoeken op SPC_MAC/EPS_SERIAL")
     parser.add_argument("--dry-run", action="store_true", help="Wel uitlezen, geen commando sturen")
+    parser.add_argument("--watch", action="store_true",
+                        help="Na het commando pollen tot de status verandert")
     auth = parser.add_mutually_exclusive_group()
     auth.add_argument("--token", action="store_true", help="Vraag een Bearer-token verborgen op (niet opslaan)")
     auth.add_argument("--cookie", action="store_true", help="Plak connect_session verborgen; haal het toegangstoken eruit (niet opslaan)")
@@ -208,19 +258,28 @@ def main():
             print(f"DRY RUN: PATCH {BASE_URL}{path}/lighting "
                   f"body {json.dumps(body)} (niets verstuurd)")
             return
+        before = snapshot(api, key, path, "lighting") if args.watch else None
         api("PATCH", path + "/lighting", key, body=body)
-        print("Verlichting aangepast. Lees daarna status of config lighting opnieuw "
-              "om te zien welke velden meebewegen.")
+        print("Verlichting aangepast.")
+        if args.watch:
+            watch_module(api, key, path, "lighting", before)
+        else:
+            print("Lees over ~30s status of config lighting opnieuw; de wijziging "
+                  "wordt pas bij de volgende synchronisatie zichtbaar.")
         return
+    pool_path = path
     path += "/cmd/" + COMMANDS[args.action]
     if args.dry_run:
         print(f"DRY RUN: POST {BASE_URL}{path} (geen body; niets verstuurd)")
         return
+    before = snapshot(api, key, pool_path, "cover") if args.watch else None
     result = api("POST", path, key)
     if isinstance(result, dict) and (result.get("error") or result.get("success") is False):
         raise RuntimeError("API meldt een fout: " + json.dumps(result).replace(key, "[verborgen]"))
     print("Commando geaccepteerd/in wachtrij; dit bewijst nog niet dat de afdekking beweegt.")
     print("Controleer fysiek bij het zwembad. Verwerking volgt bij de volgende synchronisatie.")
+    if args.watch:
+        watch_module(api, key, pool_path, "cover", before)
 
 
 if __name__ == "__main__":
