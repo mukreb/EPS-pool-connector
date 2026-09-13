@@ -7,8 +7,10 @@ import binascii
 import getpass
 import json
 import os
+import re
 import sys
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 from functools import partial
 from urllib.error import HTTPError, URLError
@@ -18,6 +20,8 @@ from uuid import UUID
 
 BASE_URL = "https://api.smartpoolconnect.eu"
 COMMANDS = {"open": "cover_open", "close": "cover_close", "stop": "cover_stop"}
+MODULES_HINT = "filter, cover, lighting, spec, ph, cl, temperature, level"
+MODULE_RE = re.compile(r"^[a-z0-9_]+(?:/[a-z0-9_-]+)?$")
 
 
 def hidden_input(prompt):
@@ -47,6 +51,31 @@ def token_from_cookie(value):
     except (ValueError, KeyError, TypeError, binascii.Error):
         raise RuntimeError("Ongeldige sessiecookie of geen access_token. "
                            "Kopieer de volledige waarde van connect_session uit Chrome.") from None
+
+
+def token_expiry(token):
+    """Lees exp uit de JWT-payload. Puur informatief; de API valideert zelf."""
+    try:
+        payload = token.split(".")[1]
+        decoded = base64.b64decode(payload + "=" * (-len(payload) % 4),
+                                   altchars=b"-_", validate=True)
+        return datetime.fromtimestamp(int(json.loads(decoded)["exp"]), timezone.utc)
+    except (ValueError, KeyError, TypeError, IndexError, OverflowError, OSError,
+            binascii.Error):
+        return None
+
+
+def report_expiry(token):
+    moment = token_expiry(token)
+    if moment is None:
+        print("Vervaldatum van het token niet leesbaar (geen standaard JWT).")
+        return
+    left = moment - datetime.now(timezone.utc)
+    if left.total_seconds() <= 0:
+        print(f"Let op: token is verlopen op {moment:%Y-%m-%d %H:%M} UTC.")
+    else:
+        print(f"Token verloopt op {moment:%Y-%m-%d %H:%M} UTC "
+              f"(nog {left.days} dag(en), {left.seconds // 3600} uur).")
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -98,7 +127,9 @@ def request(method, path, key, *, bearer=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["list", "status", *COMMANDS])
+    parser.add_argument("action", choices=["list", "status", "raw", "config", *COMMANDS])
+    parser.add_argument("module", nargs="?",
+                        help=f"Alleen bij config: welke module ({MODULES_HINT})")
     parser.add_argument("--pid", help="Pool UUID; anders zoeken op SPC_MAC/EPS_SERIAL")
     parser.add_argument("--dry-run", action="store_true", help="Wel uitlezen, geen commando sturen")
     auth = parser.add_mutually_exclusive_group()
@@ -116,6 +147,8 @@ def main():
             token = token_from_cookie(cfg["SPC_SESSION_COOKIE"])
     key = token or cfg.get("SPC_API_KEY") or cfg.get("EPS_API_KEY", "")
     api = partial(request, bearer=bool(token))
+    if token:
+        report_expiry(token)
     if not key:
         raise RuntimeError("Gebruik --cookie/--token of zet SPC_SESSION_COOKIE, SPC_ACCESS_TOKEN of SPC_API_KEY in .env.")
     if args.token and not token:
@@ -145,6 +178,18 @@ def main():
         print(json.dumps({k: pool[k] for k in
                          ("pid", "name", "version", "status", "activity_at", "cover")
                          if k in pool}, indent=2, ensure_ascii=False))
+        return
+    if args.action == "raw":
+        print(json.dumps(api("GET", path, key), indent=2, ensure_ascii=False))
+        return
+    if args.action == "config":
+        if not args.module:
+            raise RuntimeError("Geef een module mee, bijvoorbeeld: config filter. "
+                               f"Bekend: {MODULES_HINT}.")
+        if not MODULE_RE.match(args.module):
+            raise RuntimeError("Ongeldige modulenaam; gebruik bijvoorbeeld filter of aux/1.")
+        print(json.dumps(api("GET", path + "/" + args.module, key),
+                         indent=2, ensure_ascii=False))
         return
     path += "/cmd/" + COMMANDS[args.action]
     if args.dry_run:
