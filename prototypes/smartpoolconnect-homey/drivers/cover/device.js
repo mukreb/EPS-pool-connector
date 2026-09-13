@@ -2,6 +2,7 @@
 
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
+const { WriteGuard } = require('../../lib/write-guard');
 const { mapCoverStatus } = require('../../lib/mapping');
 
 // windowcoverings_state kent maar drie waarden (up/idle/down) en bedient de
@@ -25,6 +26,7 @@ const COMMANDS = {
 class CoverDevice extends Homey.Device {
   async onInit() {
     this.pid = this.getData().id;
+    this._writeGuard = new WriteGuard(this);
     this._createClient();
     this._poller = this.homey.app.getPoller(this.pid, this.client);
     this._poller.subscribe(this);
@@ -32,24 +34,17 @@ class CoverDevice extends Homey.Device {
     // Afdekking bewegen is een fysieke handeling (beknellingsrisico) en het
     // stopcommando loopt óók via de cloud, dus geen lokale noodstop. Standaard
     // uit; zolang dat zo is blijft dit device alleen-lezen. Zie §6.
-    this.registerCapabilityListener('windowcoverings_state', async (value) => {
+    this.registerCapabilityListener('windowcoverings_state', (value) => this._writeGuard.run(async () => {
       if (!this.getSetting('allow_control')) {
         throw new Error(this.homey.__('errors.control_not_allowed'));
       }
       const command = COMMANDS[value];
       if (!command) throw new Error(`Unknown windowcoverings_state: ${value}`);
-      try {
-        await this.client.sendCommand(this.pid, command);
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
-          await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
-        }
-        throw err;
-      }
+      await this.client.sendCommand(this.pid, command);
       // Geen automatische herhaling bij een timeout: het commando kan al
       // ontvangen zijn. Zie §10.2.
       this._poller.refreshAfter('command');
-    });
+    }));
 
     this.log(`CoverDevice ${this.pid} initialised`);
   }
@@ -63,6 +58,7 @@ class CoverDevice extends Homey.Device {
     await this.setStoreValue('credential', credential);
     this._createClient();
     this._poller.setClient(this.client);
+    this._writeGuard.reset();
     await this.setAvailable().catch(this.error);
   }
 

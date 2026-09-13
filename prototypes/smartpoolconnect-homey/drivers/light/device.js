@@ -2,11 +2,13 @@
 
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
+const { WriteGuard } = require('../../lib/write-guard');
 const { lightingOn } = require('../../lib/mapping');
 
 class LightDevice extends Homey.Device {
   async onInit() {
     this.pid = this.getData().id;
+    this._writeGuard = new WriteGuard(this);
     this._createClient();
     this._poller = this.homey.app.getPoller(this.pid, this.client);
     this._poller.subscribe(this);
@@ -15,29 +17,22 @@ class LightDevice extends Homey.Device {
     // alleen always_active. lighting_next/lighting_reset wisselen alleen de
     // RGB-kleur en doen niets op een enkelkleurige lamp, dus die twee knoppen
     // bestaan hier alleen als de pairing-flow ze heeft aangemaakt. Zie §3.2.
-    this.registerCapabilityListener('onoff', async (value) => {
-      try {
-        await this.client.setLighting(this.pid, value);
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
-          await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
-        }
-        throw err;
-      }
+    this.registerCapabilityListener('onoff', (value) => this._writeGuard.run(async () => {
+      await this.client.setLighting(this.pid, value);
       this._poller.refreshAfter('patch');
-    });
+    }));
 
     if (this.hasCapability('button.next_colour')) {
-      this.registerCapabilityListener('button.next_colour', async () => {
+      this.registerCapabilityListener('button.next_colour', () => this._writeGuard.run(async () => {
         await this.client.sendCommand(this.pid, 'lighting_next');
         this._poller.refreshAfter('command');
-      });
+      }));
     }
     if (this.hasCapability('button.reset_colour')) {
-      this.registerCapabilityListener('button.reset_colour', async () => {
+      this.registerCapabilityListener('button.reset_colour', () => this._writeGuard.run(async () => {
         await this.client.sendCommand(this.pid, 'lighting_reset');
         this._poller.refreshAfter('command');
-      });
+      }));
     }
 
     this.log(`LightDevice ${this.pid} initialised`);
@@ -52,6 +47,7 @@ class LightDevice extends Homey.Device {
     await this.setStoreValue('credential', credential);
     this._createClient();
     this._poller.setClient(this.client);
+    this._writeGuard.reset();
     await this.setAvailable().catch(this.error);
   }
 

@@ -2,6 +2,7 @@
 
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
+const { WriteGuard } = require('../../lib/write-guard');
 const mapping = require('../../lib/mapping');
 
 // Hoe lang na de laatste geziene afdekbeweging het waterniveau-alarm onderdrukt
@@ -13,7 +14,7 @@ const DEFAULT_LEVEL_THRESHOLD_CM = 2.0;
 class PoolDevice extends Homey.Device {
   async onInit() {
     this.pid = this.getData().id;
-    this._writesBlocked = false;
+    this._writeGuard = new WriteGuard(this);
     this._lastCoverMovementAt = 0;
 
     this._createClient();
@@ -35,22 +36,22 @@ class PoolDevice extends Homey.Device {
     await this.setStoreValue('credential', credential);
     this._createClient();
     this._poller.setClient(this.client);
-    this._writesBlocked = false;
+    this._writeGuard.reset();
     await this.setAvailable().catch(this.error);
   }
 
   _registerCapabilityListeners() {
-    this.registerCapabilityListener('target_temperature', (value) => this._runWrite(async () => {
+    this.registerCapabilityListener('target_temperature', (value) => this._writeGuard.run(async () => {
       await this.client.readModifyWrite(this.pid, 'temperature', { target: value });
       this._poller.refreshAfter('patch');
     }));
 
-    this.registerCapabilityListener('filter_speed', (value) => this._runWrite(async () => {
+    this.registerCapabilityListener('filter_speed', (value) => this._writeGuard.run(async () => {
       await this.client.readModifyWrite(this.pid, 'filter', { pump_speed: value });
       this._poller.refreshAfter('patch');
     }));
 
-    this.registerCapabilityListener('onoff.pause', (value) => this._runWrite(async () => {
+    this.registerCapabilityListener('onoff.pause', (value) => this._writeGuard.run(async () => {
       await this.client.readModifyWrite(this.pid, 'spec', { pause: !!value });
       this._poller.refreshAfter('patch');
     }));
@@ -58,34 +59,15 @@ class PoolDevice extends Homey.Device {
     // Shockchlorering heeft geen leesbare status in de API; de knop stuurt alleen
     // het commando en zet de capability daarna optimistisch, want er is geen
     // andere bron om op terug te vallen.
-    this.registerCapabilityListener('onoff.shock', (value) => this._runWrite(async () => {
+    this.registerCapabilityListener('onoff.shock', (value) => this._writeGuard.run(async () => {
       await this.client.sendCommand(this.pid, value ? 'shock_start' : 'shock_stop');
       this._poller.refreshAfter('command');
     }));
 
-    this.registerCapabilityListener('button.backwash', () => this._runWrite(async () => {
+    this.registerCapabilityListener('button.backwash', () => this._writeGuard.run(async () => {
       await this.client.sendCommand(this.pid, 'backwash');
       this._poller.refreshAfter('command');
     }));
-  }
-
-  // Eén foutafhandeling voor alle schrijfacties: 401 zet het device op
-  // onbeschikbaar met een verwijzing naar de repair-flow, 403 missing_scope
-  // blokkeert verdere schrijfpogingen zonder de lezende kant te raken.
-  async _runWrite(fn) {
-    if (this._writesBlocked) {
-      throw new Error(this.homey.__('errors.missing_scope'));
-    }
-    try {
-      await fn();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
-      } else if (err instanceof ApiError && err.status === 403) {
-        this._writesBlocked = true;
-      }
-      throw err;
-    }
   }
 
   async onUninit() {
@@ -120,14 +102,19 @@ class PoolDevice extends Homey.Device {
   }
 
   // v1-zwembad: GET /pool/{pid} gaf 501, dit komt uit de samenvatting van GET /pool.
+  // Geen van de modules waar de capabilities hieronder uit gelezen worden is
+  // bereikbaar zonder die detail-endpoint, dus alles verwijderen in plaats van
+  // de laatst bekende (of default) set te laten staan met permanent kapotte
+  // besturing erin.
   async _applyLimitedState(summary) {
+    await this._syncCapabilities([]);
     this.log(`Limited (v1) status for ${this.pid}: ${summary.status || 'unknown'}`);
   }
 
   async _applyFullState(pool) {
     const spec = pool.spec || {};
     await this.setStoreValue('lastSpec', spec).catch(this.error);
-    await this._syncCapabilities(spec);
+    await this._syncCapabilities(mapping.poolCapabilities(spec));
 
     await this._setIfNumber('measure_temperature', mapping.waterTemp(pool));
     await this._setIfNumber('measure_temperature.ambient', mapping.ambientTemp(pool));
@@ -160,6 +147,13 @@ class PoolDevice extends Homey.Device {
       await this._setCapabilitySafe('alarm_dryrun', mapping.dryRunRisk(pool, this._poller.metricsEverNonZero));
     }
 
+    // Anders blijft de tegel op de waarde van de laatste door Homey zelf
+    // gestuurde wijziging staan, ook als de pauzestand buiten Homey om verandert
+    // (of al gepauzeerd was bij het opstarten van het device).
+    if (typeof spec.pause === 'boolean') {
+      await this._setCapabilitySafe('onoff.pause', spec.pause);
+    }
+
     const coverStatus = pool?.cover?.status?.status;
     if (coverStatus === 3 || coverStatus === 4) {
       this._lastCoverMovementAt = Date.now();
@@ -189,14 +183,14 @@ class PoolDevice extends Homey.Device {
     return Math.max(...values);
   }
 
-  // Bouwt de capabilitylijst op uit spec (§2.6), in plaats van aan te nemen dat
-  // elk veld gevuld wordt. Draait bij elke poll zodat een spec-wijziging
-  // (nieuwe hardware) vanzelf wordt opgepikt.
-  async _syncCapabilities(spec) {
-    const wanted = new Set(mapping.poolCapabilities(spec));
-    const optional = ['target_temperature', 'measure_chlorine', 'measure_water_level',
-      'alarm_dryrun', 'alarm_water_level', 'button.backwash'];
-    for (const capability of optional) {
+  // Brengt de daadwerkelijke capabilities van dit device in lijn met `desired`
+  // (uit spec via §2.6, of een lege lijst voor een v1-zwembad zonder detail-
+  // endpoint). Reconcileert de hele beheerde set, niet alleen de optionele,
+  // zodat de v1-fallback ook de basiscapabilities kan wegnemen. Draait bij
+  // elke poll zodat een spec-wijziging (nieuwe hardware) vanzelf wordt opgepikt.
+  async _syncCapabilities(desired) {
+    const wanted = new Set(desired);
+    for (const capability of mapping.POOL_MANAGED_CAPABILITIES) {
       const shouldHave = wanted.has(capability);
       const has = this.hasCapability(capability);
       if (shouldHave && !has) {
@@ -228,7 +222,7 @@ class PoolDevice extends Homey.Device {
       // 403 op de GET zelf betekent dat zelfs pools:read/controls:read/history:read
       // ontbreekt - dan is er niets te tonen, in tegenstelling tot een 403 op een
       // schrijfactie (die alleen controls:write mist en de lezende kant met rust
-      // laat, afgehandeld in _runWrite()).
+      // laat, afgehandeld door WriteGuard in lib/write-guard.js).
       await this.setUnavailable(this.homey.__('errors.missing_read_scope')).catch(this.error);
       return;
     }

@@ -149,3 +149,10 @@ test('poolCapabilities: basis plus alleen wat spec toestaat', () => {
   assert.ok(full.includes('alarm_dryrun'));
   assert.ok(full.includes('button.backwash'));
 });
+
+test('poolCapabilities(null): v1-fallback (geen detail-endpoint) levert een lege lijst', () => {
+  // GET /pool/{pid} gaf 501, dus er is geen spec en geen enkele van deze
+  // capabilities heeft een databron. Zie de PoolDriver code review-fix.
+  assert.deepEqual(mapping.poolCapabilities(null), []);
+  assert.deepEqual(mapping.poolCapabilities(undefined), []);
+});

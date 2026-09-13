@@ -145,10 +145,34 @@ const POOL_BASE_CAPABILITIES = [
   'onoff.shock',
 ];
 
+// Alleen aanwezig als spec het toestaat. Losse lijst (i.p.v. alleen afleidbaar
+// uit poolCapabilities) zodat device.js precies weet welke capabilities het
+// mag toevoegen/verwijderen zonder de basisset te raken.
+const POOL_OPTIONAL_CAPABILITIES = [
+  'target_temperature',
+  'measure_chlorine',
+  'measure_water_level',
+  'alarm_dryrun',
+  'alarm_water_level',
+  'button.backwash',
+];
+
+// Alles wat _syncCapabilities beheert: de basisset plus wat optioneel is. Voor
+// een v1-zwembad (GET /pool/{pid} geeft 501, dus geen spec en geen enkel van
+// deze velden) is dit tegelijk de volledige lijst die weer verwijderd moet
+// worden — zie poolCapabilities(null) hieronder en de "limited" tak in
+// PoolDevice#_applyLimitedState.
+const POOL_MANAGED_CAPABILITIES = [...POOL_BASE_CAPABILITIES, ...POOL_OPTIONAL_CAPABILITIES];
+
+// spec === null (v1-fallback, alleen de samenvatting uit GET /pool) levert een
+// lege lijst: geen van de modules waar deze capabilities vandaan komen is dan
+// bereikbaar, dus niets ervan tonen is eerlijker dan de volledige set laten
+// staan met permanent onbruikbare besturing erin.
 function poolCapabilities(spec) {
+  if (!spec) return [];
   const plan = capabilityPlan(spec);
   const capabilities = [...POOL_BASE_CAPABILITIES];
-  if ((spec || {}).heating_enabled === true) capabilities.push('target_temperature');
+  if (spec.heating_enabled === true) capabilities.push('target_temperature');
   if (plan.chlorinePpm) capabilities.push('measure_chlorine');
   if (plan.waterLevel) capabilities.push('measure_water_level', 'alarm_water_level');
   if (plan.dryRunAlarm) capabilities.push('alarm_dryrun');
@@ -174,5 +198,7 @@ module.exports = {
   chlorinePpm,
   capabilityPlan,
   POOL_BASE_CAPABILITIES,
+  POOL_OPTIONAL_CAPABILITIES,
+  POOL_MANAGED_CAPABILITIES,
   poolCapabilities,
 };
