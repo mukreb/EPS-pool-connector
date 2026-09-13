@@ -23,6 +23,22 @@ Het is een **ontwerpvoorstel**, geen implementatie. Basis is de aangeleverde
 | Hardwareversie | Dit zwembad is **v2** (vastgesteld 7 september 2026 via de ingelogde website). v2 = volledige besturing + configuratie. |
 | Alle meetwaarden | Eén `GET /pool/{pid}` levert alle modules met `metrics`, `status` en `config`. Dezelfde vorm voor v1/v2/v3 — de API vertaalt v3-firmwaretabellen naar v1/v2-vorm. |
 
+### Wat er inmiddels praktisch bewezen is
+
+Met het [CLI-prototype](../prototypes/smartpoolconnect-cli/) is vastgesteld dat de
+route uit dit voorstel werkt — niet alleen op papier:
+
+- **Lezen werkt.** `GET /pool` en `GET /pool/{pid}` geven HTTP 200 met de
+  modulegegevens.
+- **Bedienen werkt.** De afdekking is via `POST /pool/{pid}/cmd/cover_open` en
+  `cover_close` daadwerkelijk open- en weer dichtgegaan. Daarmee is de hele
+  bedieningskant van dit voorstel geen aanname meer.
+- **Het gebruikte credential is een OAuth-token uit de browsersessie**, niet een
+  `spc_…`-API-key. Die key is nog niet door de leverancier verstrekt.
+
+Dat laatste punt is geen detail: het bepaalt hoe de app met authenticatie moet
+omgaan, zie [§4.2](#42-authenticatie-twee-methoden-naast-elkaar).
+
 Twee valkuilen die de documentatie expliciet noemt en die het ontwerp sturen:
 
 1. **`PATCH` vervangt het hele configuratie-object**, het is geen partiële merge.
@@ -146,6 +162,10 @@ HTTP 200 betekent *in de wachtrij gezet*, niet *uitgevoerd*.
 | `shock_start` / `shock_stop` | shockchlorering starten / stoppen | v2 |
 | `lighting_next` / `lighting_reset` | volgende kleur / kleur resetten | v2 |
 
+`cover_open` en `cover_close` zijn met het CLI-prototype daadwerkelijk uitgevoerd:
+de afdekking ging open en weer dicht. De overige commando's in deze tabel zijn nog
+niet getest.
+
 ### 3.2 Persistente instellingen — `PATCH /pool/{pid}/{module}`
 
 | Instelling | Endpoint | Body |
@@ -184,7 +204,46 @@ Smart Pool Connect (app)
 Alle drie worden bij het koppelen in één keer aangemaakt vanaf hetzelfde
 pool-UUID, dus je doorloopt de pair-flow één keer.
 
-### 4.2 Eén gedeelde poller
+### 4.2 Authenticatie: twee methoden naast elkaar
+
+De app moet **beide** credentials ondersteunen, want in de praktijk is er nu alleen
+een browsertoken en later hopelijk een API-key. De API accepteert ze allebei op
+dezelfde endpoints; alleen de header verschilt:
+
+| Methode | Header | Geschikt voor |
+|---|---|---|
+| API-key | `X-API-Key: spc_…` | permanent gebruik — dit is waar de app naartoe moet |
+| OAuth-token | `Authorization: Bearer <token>` | nu bruikbaar, maar verloopt een keer |
+
+In de pair-flow komt dus een keuze: *API-key* (aanbevolen) of *toegangstoken*. De
+API-client heeft er verder geen last van — één `authHeader()`-functie die op basis
+van het opgeslagen credentialtype de juiste header zet, de rest van de code blijft
+identiek.
+
+**Omgaan met een verlopend token.** Dat het token al dagen ongewijzigd is, betekent
+niet dat het onbeperkt geldig is — een JWT draagt zijn eigen vervaldatum mee in het
+`exp`-veld van de payload. Die is zonder sleutel uit te lezen: het middelste deel van
+het token is base64, en daar staat een Unix-tijdstempel in. Zo weet je precies hoe
+lang je nog hebt in plaats van te moeten afwachten.
+
+De app doet daar drie dingen mee:
+
+1. **Bij het koppelen** het `exp`-veld uitlezen en de vervaldatum tonen, zodat
+   meteen duidelijk is of dit een token van een dag of van een half jaar is.
+2. **Ruim van tevoren waarschuwen** — een Homey-melding een paar dagen voor de
+   vervaldatum, in plaats van een zwembad dat op een onbewaakt moment stilvalt.
+3. **Een repair-flow** (`"repair"` naast `"pair"` in `app.json`). Als de API 401
+   teruggeeft, gaat het device op *niet beschikbaar* met de melding "token verlopen —
+   open Reparatie om een nieuw token te plakken". Je hoeft het device dan niet
+   opnieuw toe te voegen en je flows blijven intact.
+
+Zodra de `spc_…`-key er is, is dat een kwestie van één keer de repair-flow doorlopen
+en het tokenpad wordt verder niet meer geraakt.
+
+Het credential staat in de Homey device-store, niet in een `.env`-bestand, en wordt
+uit logs en foutmeldingen gefilterd.
+
+### 4.3 Eén gedeelde poller
 
 Drie devices die elk apart pollen zou drie keer zoveel verzoeken kosten. In plaats
 daarvan houdt `app.js` één `PoolPoller` per pool-UUID bij: die doet één
@@ -207,7 +266,7 @@ Na elk verstuurd commando doet de poller één extra verfrissing na ~10 seconden
 de tegel snel de werkelijke toestand toont in plaats van alleen de optimistische
 waarde.
 
-### 4.3 Capability-overzicht per device
+### 4.4 Capability-overzicht per device
 
 **Device "Zwembad"** (class `sensor`)
 
@@ -242,7 +301,7 @@ waarde.
 | `button.next_colour` | `cmd/lighting_next` |
 | `button.reset_colour` | `cmd/lighting_reset` |
 
-### 4.4 Hoe de tegel eruit ziet
+### 4.5 Hoe de tegel eruit ziet
 
 ```
 ┌──────────────────────────────────┐   ┌─────────────────┐  ┌─────────────────┐
@@ -329,46 +388,43 @@ noodstop. Voorstel:
 
 | Status | Betekenis | Gedrag van de app |
 |---|---|---|
-| 401 | key ongeldig of verlopen | device op *niet beschikbaar* met duidelijke melding |
+| 401 | credential ongeldig of verlopen | device op *niet beschikbaar*, plus de repair-flow aanbieden om een nieuw token of de API-key in te voeren ([§4.2](#42-authenticatie-twee-methoden-naast-elkaar)) |
 | 403 `missing_scope` | key mist `controls:write` | schrijf-capabilities uitschakelen, rest blijft werken |
 | 429 | rate limit | wachten tot `X-RateLimit-Reset`, dan pas verder (zit al in het prototype) |
 | 501 | `Unsupported version` | v3-zwembad, of v1 op `GET /pool/{pid}` — nette melding in plaats van een crash |
 
-De key wordt opgeslagen in de Homey device-store, nooit in de logs. `spc_…`-waarden
-worden uit foutmeldingen gefilterd.
+Het credential staat in de Homey device-store, nooit in de logs. Zowel `spc_…`-keys
+als tokens worden uit foutmeldingen gefilterd.
 
 ---
 
 ## 7. Open punten
 
-Dingen die uitgezocht moeten worden voordat dit gebouwd kan worden:
+Dingen die uitgezocht moeten worden. Geen ervan blokkeert de bouw nog — lezen én
+bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-praktisch-bewezen-is)).
 
-1. **Welk credential gebruikt de Homey-app?** Het CLI-prototype werkt tegen exact
-   dezelfde host en endpoints als dit voorstel (`api.smartpoolconnect.eu`,
-   `GET /pool`, `GET /pool/{pid}`, `POST /pool/{pid}/cmd/cover_*`), dus de route is
-   in de praktijk bewezen. Alleen: dat prototype draait interactief en accepteert
-   ook een sessiecookie of OAuth-token uit de browser. Een Homey-app draait
-   onbeheerd door en kan niet elke paar uur om een verse cookie vragen — daarvoor is
-   een echte `spc_…`-key nodig via `api-support@smartpoolconnect.eu`, met
-   `pools:read`, `controls:read` en `controls:write`, gekoppeld aan dit zwembad.
-   Te controleren: is de geslaagde CLI-test met een API-key gedaan of met een
-   cookie/token? In het eerste geval kan fase 2 direct beginnen.
-2. **Statuscodes van de afdekking zijn niet gedocumenteerd.** De aanname
-   `2 = dicht`, `3/4/5 = beweegt` in het prototype moet bevestigd worden door de
-   ruwe waarde uit te lezen in elke stand (open, dicht, tijdens bewegen).
-3. **`lighting.status.status === 1` is ook een aanname.** Waarschijnlijk is
+1. **De `spc_…`-API-key is nog niet ontvangen.** Aan te vragen via
+   `api-support@smartpoolconnect.eu`, met `pools:read`, `controls:read` en
+   `controls:write`, gekoppeld aan dit zwembad. Tot die er is werkt het OAuth-token,
+   maar dat is een tijdelijke oplossing — vandaar de dubbele ondersteuning en de
+   repair-flow uit [§4.2](#42-authenticatie-twee-methoden-naast-elkaar).
+2. **Hoe lang is het huidige token geldig?** Het is al dagen ongewijzigd, maar dat
+   zegt op zichzelf niets: de vervaldatum staat in het `exp`-veld van het token zelf
+   en is zonder sleutel uit te lezen. Dat één keer controleren scheelt gokken over
+   hoe urgent de key-aanvraag is.
+3. **Statuscodes van de afdekking zijn niet gedocumenteerd.** De aanname
+   `2 = dicht`, `3/4/5 = beweegt` in het prototype moet bevestigd worden. Nu de
+   afdekking via de API te bewegen is, is dat eenvoudig: `status` uitlezen bij open,
+   bij dicht, en nog een keer terwijl hij beweegt.
+4. **`lighting.status.status === 1` is ook een aanname.** Waarschijnlijk is
    `lighting.config.always_active` de betrouwbaardere bron voor aan/uit.
-4. **Het `FilterConfig`-schema is niet uitgeschreven in de PDF** (het staat achter
+5. **Het `FilterConfig`-schema is niet uitgeschreven in de PDF** (het staat achter
    een ingeklapte "Show Schema"). De exacte veldnamen moeten uit een echte
    `GET /pool/{pid}/filter` komen — noodzakelijk, omdat `PATCH` het hele object eist.
-5. **Sondetype onbekend**: RX (mV) of CLM (ppm), of allebei.
-6. **Eerste schrijfactie testen met zicht op het zwembad.** Begin met `lighting`
-   (onschadelijk), niet met de afdekking.
-7. **Is de afdekking al daadwerkelijk bewogen via de API?** De README van het
-   CLI-prototype vermeldt dat er tot dan toe alleen gelezen was en dat er geen
-   bewegingscommando's verstuurd zijn. Als dat inmiddels wél gelukt is, is dat het
-   sterkste bewijs dat fase 2 haalbaar is — dan graag de ruwe `cover.status.status`
-   bij open, dicht en tijdens bewegen noteren, want daarmee is punt 2 meteen opgelost.
+6. **Sondetype onbekend**: RX (mV) of CLM (ppm), of allebei.
+7. **Eerste `PATCH` testen met zicht op het zwembad.** De momentane commando's zijn
+   getest, de configuratie-endpoints nog niet. Begin daar met `lighting`
+   (onschadelijk en direct zichtbaar), niet met `filter` of `spec`.
 
 ---
 
@@ -376,13 +432,18 @@ Dingen die uitgezocht moeten worden voordat dit gebouwd kan worden:
 
 | Fase | Versie | Inhoud | Vereist |
 |---|---|---|---|
-| 1 | 0.2.0 | Uitgebreid lezen: pompsnelheid/-status, motorstroom, redox/chloor gesplitst, droogloop-alarm, storingsalarm, online-detectie. Alle triggers en condities. | alleen leesrechten — kan nu al |
-| 2 | 0.3.0 | Cover- en light-device, momentane commando's (afdekking, backwash, shock, lichtkleur). | key met `controls:write` |
+| 1 | 0.2.0 | Dubbele authenticatie (key + token) met repair-flow. Uitgebreid lezen: pompsnelheid/-status, motorstroom, redox/chloor gesplitst, droogloop-alarm, storingsalarm, online-detectie. Alle triggers en condities. | niets — kan nu |
+| 2 | 0.3.0 | Cover- en light-device, momentane commando's (afdekking, backwash, shock, lichtkleur). | niets — commando's zijn getest |
 | 3 | 0.4.0 | Configuratie via read-modify-write: licht aan/uit, pauze, filtersnelheid en -schema's. | `FilterConfig`-schema bekend |
 | 4 | 1.0.0 | Afronding: vertalingen, app-store-plaatjes, `homey app validate --level publish` in CI. | — |
 
-Fase 1 is los bruikbaar en heeft geen nieuwe rechten nodig — dat is het logische
-startpunt terwijl de aanvraag voor de schrijf-key loopt.
+Fase 1 en 2 kunnen allebei nu al, met het bestaande token — de key is nodig voor
+duurzaam onbeheerd draaien, niet om te kunnen bouwen of testen. De dubbele
+authenticatie zit bewust in fase 1 en niet later: het is het verschil tussen een app
+die blijft werken als het token verloopt en een app die dan stilletjes stopt.
+
+Alleen fase 3 wacht echt ergens op, en dat is met één `GET /pool/{pid}/filter` uit de
+weg geruimd.
 
 ---
 
@@ -393,11 +454,13 @@ v0.1.0 en alleen-lezen. De opzet daarvan blijft bruikbaar — de API-client met
 rate-limit-afhandeling, de pair-flow en de polling-structuur kunnen rechtstreeks mee.
 Wat verandert:
 
-- `lib/api.js` krijgt `postCommand()`, `getConfig()` en `patchConfig()` erbij.
+- `lib/api.js` krijgt `postCommand()`, `getConfig()` en `patchConfig()` erbij, en de
+  vaste `X-API-Key`-header wordt een `authHeader()` die ook Bearer-tokens aankan.
 - De polling verhuist van het device naar een gedeelde poller in `app.js`.
 - Er komen twee drivers bij (`cover`, `light`).
 - `measure_chlorine` (mV) wordt hernoemd naar `measure_redox`, zodat `measure_chlorine`
   vrijkomt voor een echte ppm-waarde.
+- De pair-flow krijgt een keuze tussen key en token, en er komt een repair-flow bij.
 
 De sectie *"Why no write actions yet?"* in de README van dat prototype is
 achterhaald. Die stelt dat bediening alleen via `www.smartpoolconnect.eu` met een
@@ -407,5 +470,8 @@ plus de `controls:write`-scope. Het CLI-prototype, dat werkt, gebruikt precies d
 route. Die README is in dit voorstel meegecorrigeerd.
 
 Het CLI-prototype blijft daarnaast nuttig náást de app: het is de snelste manier om
-de open punten uit §7 te beantwoorden (ruwe statuscodes uitlezen, het
-`FilterConfig`-schema ophalen) zonder eerst een Homey-app te hoeven bouwen.
+de open punten uit §7 te beantwoorden (ruwe afdekstatus uitlezen in elke stand, het
+`FilterConfig`-schema ophalen, de vervaldatum van het token controleren) zonder
+eerst een Homey-app te hoeven bouwen. Het zou daarvoor twee kleine uitbreidingen
+kunnen gebruiken: een `config <module>`-commando dat een module-config ruw afdrukt,
+en het tonen van de `exp`-datum van het gebruikte token.

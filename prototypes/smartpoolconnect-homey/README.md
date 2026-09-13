@@ -85,9 +85,16 @@ That is not the case: the official API exposes them on
 - `PATCH /pool/{pid}/filter` for pump speed and schedules.
 
 The [`smartpoolconnect-cli`](../smartpoolconnect-cli/) prototype already uses
-that route successfully. What is still missing here is an API key carrying the
-`controls:write` scope (request one via `api-support@smartpoolconnect.eu`) and
-the implementation itself.
+that route successfully — the deck cover has actually been opened and closed
+through `POST /pool/{pid}/cmd/cover_open|cover_close`. What is missing here is
+the implementation, not the API.
+
+Note that those successful calls used an OAuth token taken from a browser
+session, because no `spc_…` API key has been issued yet. A token works, but it
+expires; a Homey app runs unattended and cannot ask for a fresh one. The
+proposal therefore supports both credential types plus a repair flow, and an
+API key with `pools:read`, `controls:read` and `controls:write` is still worth
+requesting via `api-support@smartpoolconnect.eu`.
 
 See [the Homey app proposal](../../docs/homey-app-voorstel.md) for how the
 read and control features are planned to fit together.
