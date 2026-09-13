@@ -77,6 +77,21 @@ Een SmartPoolConnect-key is aan te vragen via api-support@smartpoolconnect.eu. V
 
 Deze test gebruikt de nieuwe API op `https://api.smartpoolconnect.eu`, met `X-API-Key` en een lege `POST /pool/{pid}/cmd/cover_open`, `cover_stop` of `cover_close`. De bestaande `eps`-connector gebruikt de oudere SmartPoolControl-API.
 
-Volgens de aangeleverde JSON/PDF werken deze commando's voor hardware v1/v2; v3 geeft `Unsupported version`. HTTP 200 betekent dat het commando in de wachtrij staat. Pas na synchronisatie kan de afdekking bewegen. Controleer de beweging zelf en lees daarna `status` opnieuw. De status wordt onbewerkt getoond: de documentatie specificeert hier geen betrouwbare vertaling van alle afdekstatuscodes. Een geslaagde test bewijst alleen deze lees- en afdekfuncties, niet de volledige API.
+Volgens de aangeleverde JSON/PDF werken deze commando's voor hardware v1/v2; v3 geeft `Unsupported version`. HTTP 200 betekent dat het commando in de wachtrij staat. Pas na synchronisatie kan de afdekking bewegen. Controleer de beweging zelf en lees daarna `status` opnieuw. Een geslaagde test bewijst alleen deze lees- en afdekfuncties, niet de volledige API.
+
+### Gemeten afdekstatuscodes
+
+De documentatie vertaalt de codes in `cover.status.status` niet. Op 13 september 2026 zijn ze vastgesteld door de afdekking te laten bewegen en er status bij uit te lezen:
+
+| Code | Betekenis |
+|---|---|
+| 2 | Dicht |
+| 3 | Aan het openen |
+| 4 | Aan het sluiten |
+| 5 | Gestopt in tussenstand |
+
+De code voor *volledig open* is nog niet waargenomen; bij die test is halverwege gestopt.
+
+Reken op **20 tot 30 seconden** tussen het versturen van een commando en het moment dat de nieuwe status zichtbaar is. Gebruik `cover.status.timestamp` om te zien of het zwembad echt iets nieuws gemeld heeft: dat veld verspringt pas bij een echte statuswijziging, terwijl `activity_at` bij vrijwel elk verzoek meebeweegt.
 
 Bij een timeout wordt niet automatisch opnieuw verstuurd: het commando kan al ontvangen zijn. HTTP 401 wijst op authenticatie; HTTP 403 op toegang/scopes; HTTP 429 op de verzoeklimiet.

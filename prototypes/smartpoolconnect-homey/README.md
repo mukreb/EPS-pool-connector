@@ -25,7 +25,12 @@ design.
 | Chlorine (mV) | `cl.metrics.actual` |
 | Filter pump (on/off) | `filter.status.pump_status > 0` |
 | Lighting (on/off) | `lighting.status.status === 1` |
-| Deck cover (closed / moving / unknown) | `cover.status.status` |
+| Deck cover (closed / opening / closing / stopped / unknown) | `cover.status.status` |
+
+The cover status codes are not documented by the API. They were measured on
+13-09-2026 by moving the cover and reading `cover.status.status`: `2` closed,
+`3` opening, `4` closing, `5` stopped part-way. The code for *fully open* has
+not been observed yet and still reports as unknown.
 
 Polling interval is configurable per device (15–300 s, default 30 s).
 At default settings the app makes ~2 requests per minute, well under the

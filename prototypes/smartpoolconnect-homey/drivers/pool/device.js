@@ -3,8 +3,14 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
 
-const COVER_IDLE_CLOSED = 2;
-const COVER_MOVING = new Set([3, 4, 5]);
+// Gemeten op 13-09-2026; deze codes staan niet in de API-documentatie.
+// De code voor "volledig open" is nog niet waargenomen.
+const COVER_STATES = new Map([
+  [2, 'closed'],
+  [3, 'opening'],
+  [4, 'closing'],
+  [5, 'stopped'],
+]);
 
 class PoolDevice extends Homey.Device {
   async onInit() {
@@ -92,9 +98,7 @@ class PoolDevice extends Homey.Device {
   }
 
   _mapCover(raw) {
-    if (raw === COVER_IDLE_CLOSED) return 'closed';
-    if (typeof raw === 'number' && COVER_MOVING.has(raw)) return 'moving';
-    return 'unknown';
+    return COVER_STATES.get(raw) || 'unknown';
   }
 
   _handleError(err) {

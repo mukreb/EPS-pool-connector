@@ -30,9 +30,13 @@ route uit dit voorstel werkt — niet alleen op papier:
 
 - **Lezen werkt.** `GET /pool` en `GET /pool/{pid}` geven HTTP 200 met de
   modulegegevens.
-- **Bedienen werkt.** De afdekking is via `POST /pool/{pid}/cmd/cover_open` en
-  `cover_close` daadwerkelijk open- en weer dichtgegaan. Daarmee is de hele
-  bedieningskant van dit voorstel geen aanname meer.
+- **Bedienen werkt.** De afdekking is via `POST /pool/{pid}/cmd/cover_open`,
+  `cover_stop` en `cover_close` daadwerkelijk gaan bewegen, halverwege gestopt en
+  weer gesloten. Daarmee is de hele bedieningskant van dit voorstel geen aanname meer.
+- **De afdekstatuscodes zijn gemeten** door tijdens die beweging status uit te lezen,
+  zie [§2.5](#statuscodes-van-de-afdekking--gemeten-niet-gedocumenteerd).
+- **Een commando doet er 20 tot 30 seconden over** voordat het in de status zichtbaar
+  is. Dat is bepalend voor hoe de app na een commando moet verversen.
 - **Het gebruikte credential is een OAuth-token uit de browsersessie**, niet een
   `spc_…`-API-key. Die key is nog niet door de leverancier verstrekt.
 
@@ -164,9 +168,30 @@ Modbus-pomp), dus de app hoeft het sensortype niet te kennen.
 | Controller gepauzeerd | `GET /pool/{pid}/spec` → `pause` | `onoff.pause` |
 | Online/offline | `GET /pool` → `status` + `activity_at` | `setAvailable()` / `setUnavailable()` |
 
-⚠️ **De statuscodes van de afdekking staan niet in de documentatie.** Het huidige
-prototype gokt `2 = dicht` en `3/4/5 = beweegt`. Dat moet empirisch bevestigd
-worden voordat er een stand in de UI getoond wordt — zie [§7](#7-open-punten).
+#### Statuscodes van de afdekking — gemeten, niet gedocumenteerd
+
+Deze codes staan nergens in de PDF. Ze zijn op 13 september 2026 vastgesteld door
+de afdekking te laten bewegen en er `cover.status.status` bij uit te lezen:
+
+| Code | Betekenis | Hoe vastgesteld |
+|---|---|---|
+| 2 | Dicht | beginstand, afdekking lag dicht |
+| 3 | Aan het openen | direct na `cmd/cover_open` |
+| 4 | Aan het sluiten | direct na `cmd/cover_close` |
+| 5 | Gestopt in tussenstand | na `cmd/cover_stop` halverwege het openen |
+
+**De code voor volledig open is nog onbekend**: bij deze test is de afdekking
+halverwege gestopt en daarna weer gesloten, dus die eindstand is niet bereikt.
+Waarschijnlijk 0, 1 of 6, maar dat is een gok tot iemand het meet.
+
+> Hier zit een fout in het bestaande prototype: dat rekent `5` bij *beweegt*. Een
+> afdekking die halverwege is gestopt blijft dan eindeloos "beweegt" tonen, terwijl
+> hij juist stilstaat. Dat is inmiddels gecorrigeerd.
+
+Voor de app betekent dit vier zinvolle standen in plaats van twee: `closed`,
+`opening`, `closing` en `stopped`, plus `open` zodra die code bekend is. Een stand
+die stilstaat maar niet dicht is, is precies het geval waar je een flow op wilt
+kunnen bouwen ("afdekking staat al een uur halfopen").
 
 ---
 
@@ -315,9 +340,16 @@ app.js
 Budget bij het standaardinterval van 30 s: 2 verzoeken/minuut van de 60. Ruim
 voldoende marge voor commando's en voor de `GET`-helft van elke read-modify-write.
 
-Na elk verstuurd commando doet de poller één extra verfrissing na ~10 seconden, zodat
-de tegel snel de werkelijke toestand toont in plaats van alleen de optimistische
-waarde.
+Na elk verstuurd commando verfrist de poller een paar keer extra in plaats van één
+keer. Uit de metingen blijkt namelijk dat een commando er **20 tot 30 seconden** over
+doet voordat het in de status zichtbaar is — `cmd/cover_stop` werd pas ruim 30
+seconden later zichtbaar, `cmd/cover_close` na ruim 23 seconden. Dat past bij wat de
+documentatie zegt: het zwembad voert het commando uit "bij de volgende synchronisatie".
+
+Eén verfrissing na 10 seconden zou de oude waarde teruglezen en de tegel laten
+terugklappen. Beter is een reeks op ongeveer 5, 15, 30 en 45 seconden, die stopt zodra
+`cover.status.timestamp` verspringt — dat veld is de betrouwbare indicatie dat het
+zwembad echt iets nieuws gemeld heeft, en niet dat de app alleen opnieuw gekeken heeft.
 
 ### 4.4 Capability-overzicht per device
 
@@ -465,16 +497,21 @@ bedienen zijn inmiddels in de praktijk bewezen (zie [§1](#wat-er-inmiddels-prak
    zegt op zichzelf niets: de vervaldatum staat in het `exp`-veld van het token zelf
    en is zonder sleutel uit te lezen. Dat één keer controleren scheelt gokken over
    hoe urgent de key-aanvraag is.
-3. **Statuscodes van de afdekking zijn niet gedocumenteerd.** De aanname
-   `2 = dicht`, `3/4/5 = beweegt` in het prototype moet bevestigd worden. Nu de
-   afdekking via de API te bewegen is, is dat eenvoudig: `status` uitlezen bij open,
-   bij dicht, en nog een keer terwijl hij beweegt.
+3. ~~Statuscodes van de afdekking zijn niet gedocumenteerd.~~ **Opgelost**, op één
+   punt na: `2` dicht, `3` openen, `4` sluiten, `5` gestopt in tussenstand. De code
+   voor *volledig open* is nog niet gezien, omdat de test halverwege is gestopt.
+   Eén keer helemaal open laten lopen en de status aflezen, dan is ook dat rond.
 4. **`lighting.status.status === 1` is ook een aanname.** Waarschijnlijk is
    `lighting.config.always_active` de betrouwbaardere bron voor aan/uit.
 5. **Het `FilterConfig`-schema is niet uitgeschreven in de PDF** (het staat achter
    een ingeklapte "Show Schema"). De exacte veldnamen moeten uit een echte
    `GET /pool/{pid}/filter` komen — noodzakelijk, omdat `PATCH` het hele object eist.
-6. **Sondetype onbekend**: RX (mV) of CLM (ppm), of allebei.
+6. **Sondetype onbekend**: RX (mV) of CLM (ppm), of allebei. Af te lezen met
+   `pool_test.py raw`, dat nu ook de modules `ph`, `cl`, `temperature` en `filter`
+   toont die `status` wegfilterde.
+8. **Wat is `covco`?** Dat veld staat naast `status` in `cover.status` en bleef op `0`
+   staan, ook met een commando in de wachtrij. Het is dus geen echo van het laatste
+   commando. Onbekend, en voorlopig niet nodig.
 7. **Eerste `PATCH` testen met zicht op het zwembad.** De momentane commando's zijn
    getest, de configuratie-endpoints nog niet. Begin daar met `lighting`
    (onschadelijk en direct zichtbaar), niet met `filter` of `spec`.
