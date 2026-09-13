@@ -9,10 +9,11 @@ in [Homey](https://homey.app). Exposes one device per pool with sensors for
 water and ambient temperature, pH, chlorine, filter pump, lighting and deck
 cover.
 
-**Status: v0.1.0 — read-only.** Controlling lighting and the deck cover is not
-yet possible because the corresponding endpoints currently require a
-web-session cookie rather than the official API key. See
-[Why no write actions yet?](#why-no-write-actions-yet) below.
+**Status: v0.1.0 — read-only.** This app does not yet control lighting or the
+deck cover, but that is a gap in this prototype, not in the API. See
+[Why no write actions yet?](#why-no-write-actions-yet) below, and
+[the Homey app proposal](../../docs/homey-app-voorstel.md) for the planned
+design.
 
 ## What you get
 
@@ -70,20 +71,26 @@ Press `Ctrl+C` to stop. For permanent installation, use `homey app install`.
 
 ## Why no write actions yet?
 
-The official, documented API (`api.smartpoolconnect.eu` with `X-API-Key`)
-returns *read* data including lighting status and cover state, but does not
-expose endpoints to control lighting or the deck cover. Those actions live
-on `www.smartpoolconnect.eu` as
-`POST /api/cmd/{pid}/cover_{open,stop,close}` and
-`PATCH /pool/{pid}/lighting.data`, and currently authenticate via a
-web-session cookie rather than the API key. Using a captured cookie works
-but breaks every time the session expires.
+**This section is outdated.** It was written before the SmartPoolConnect API
+documentation covering commands became available, and claimed that control
+actions only existed on `www.smartpoolconnect.eu` behind a web-session cookie.
+That is not the case: the official API exposes them on
+`api.smartpoolconnect.eu` with `X-API-Key`, namely
 
-This app deliberately uses only the official API key route so it stays
-honest and stable. Once SmartPoolConnect ships per-endpoint enforcement for
-API keys (their docs mention this is in progress) we will add lighting
-and cover control in a follow-up release. If you would like to see this
-sooner, drop a note to `api-support@smartpoolconnect.eu`.
+- `POST /pool/{pid}/cmd/{command}` — `cover_open`, `cover_stop`, `cover_close`,
+  `backwash`, `shock_start`, `shock_stop`, `lighting_next`, `lighting_reset`;
+- `PATCH /pool/{pid}/lighting` with `{"always_active": true|false}` for
+  lighting on/off (it is a setting, not a command);
+- `PATCH /pool/{pid}/spec` with `{"pause": true|false}` to pause the controller;
+- `PATCH /pool/{pid}/filter` for pump speed and schedules.
+
+The [`smartpoolconnect-cli`](../smartpoolconnect-cli/) prototype already uses
+that route successfully. What is still missing here is an API key carrying the
+`controls:write` scope (request one via `api-support@smartpoolconnect.eu`) and
+the implementation itself.
+
+See [the Homey app proposal](../../docs/homey-app-voorstel.md) for how the
+read and control features are planned to fit together.
 
 ## Development
 

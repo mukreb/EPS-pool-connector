@@ -15,6 +15,7 @@ different APIs and authentication methods, so their code is kept separate.
 | [`prototypes/smartpoolconnect-homey/`](prototypes/smartpoolconnect-homey/) | SmartPoolConnect | Homey app exposing pool sensor data | Read-only prototype |
 | [`prototypes/smartpoolcontrol-python/`](prototypes/smartpoolcontrol-python/) | SmartPoolControl | Python CLI and converted legacy documentation | Historical; old platform no longer used |
 | [`reference/smartpoolconnect/`](reference/smartpoolconnect/) | SmartPoolConnect | Supplied API reference PDF | Reference material |
+| [`docs/homey-app-voorstel.md`](docs/homey-app-voorstel.md) | SmartPoolConnect | Design proposal for a full Homey app (readings + controls) | Proposal, not yet built |
 
 ## Start here
 
