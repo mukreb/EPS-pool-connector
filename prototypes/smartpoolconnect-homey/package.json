@@ -1,11 +1,12 @@
 {
   "name": "com.mukreb.smartpoolconnect",
-  "version": "0.1.0",
-  "description": "Homey app for reading live status from a SmartPoolConnect pool.",
+  "version": "0.2.0",
+  "description": "Homey app for reading and controlling a SmartPoolConnect pool.",
   "main": "app.js",
   "scripts": {
     "validate": "homey app validate --level publish",
-    "run": "homey app run"
+    "run": "homey app run",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

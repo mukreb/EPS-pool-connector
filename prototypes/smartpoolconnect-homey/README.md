@@ -1,63 +1,138 @@
 # Smart Pool Connect — Homey app
 
-> Prototype snapshot created before the later command API documentation became
-> available. It currently remains read-only; the separate CLI prototype contains
-> the newer deck-control experiment.
-
 Read live status from a [SmartPoolConnect](https://www.smartpoolconnect.eu) pool
-in [Homey](https://homey.app). Exposes one device per pool with sensors for
-water and ambient temperature, pH, chlorine, filter pump, lighting and deck
-cover.
+in [Homey](https://homey.app), and control the things worth automating — the
+deck cover, the lighting, and the heating setpoint. Built from
+[the app proposal](../../docs/homey-app-voorstel.md); see that document for
+the reasoning behind the underlying API choices referenced below (§ numbers) —
+the capability scope described here is narrower than that proposal on purpose,
+see [Deliberately narrow scope](#deliberately-narrow-scope).
 
-**Status: v0.1.0 — read-only.** This app does not yet control lighting or the
-deck cover, but that is a gap in this prototype, not in the API. See
-[Why no write actions yet?](#why-no-write-actions-yet) below, and
-[the Homey app proposal](../../docs/homey-app-voorstel.md) for the planned
-design.
+**Status: v0.2.0 — in daily use**, sideloaded and permanently installed
+(`homey app install`) on a real installation. Fase 4 (translations polish,
+app-store assets) is not done, and this app isn't published to the Homey App
+Store — sideloading is the intended way to run it; see
+[Deliberately narrow scope](#deliberately-narrow-scope) for why that's a
+deliberate choice, not a gap.
 
 ## What you get
 
-| Capability | Source |
-|---|---|
-| Water temperature (°C) | `temperature.metrics.water_temp` |
-| Ambient temperature (°C) | `temperature.metrics.ambient_temp` |
-| pH | `ph.metrics.actual` |
-| Chlorine (mV) | `cl.metrics.actual` |
-| Filter pump (on/off) | `filter.status.pump_speed` |
-| Lighting (on/off) | `lighting.config.always_active` |
-| Deck cover (open / closed / opening / closing / stopped) | `cover.status.status` |
+Three devices are created per pool, all sharing one credential and one poller:
 
-Prefer `metrics` for measurements and `config` for settings. The `status`
-section is a single pool-wide snapshot shared by every module that only
-refreshes when the pool reports an event, and it was measured at over two hours
-stale, so it is the last resort rather than the default.
+**"Pool"** (class `sensor`) — read-only except for one setting: water/ambient
+temperature, **target temperature (setable)**, pH, redox, free chlorine (only
+with a CLM sensor), water level plus its signed deviation from the target
+level (`measure_water_level_delta`, cm — straight from the API's `level.metrics.delta`,
+sign convention not independently confirmed, see
+[Known open points](#known-open-points)), pump current, filter
+running/status/speed, dry-run alarm, fault alarm, water-level-deviation alarm.
+No pause button, no filter-speed control, no backwash, no shock
+chlorination — see [Deliberately narrow scope](#deliberately-narrow-scope).
 
-It is still the only source for two things. The cover position has no
-alternative, and does refresh while the cover moves. And the filter pump state
-has to come from `filter.status.pump_speed`, because
-`filter.metrics.pump_speed` and `pump_current` read 0 in every sample taken —
-including while `filter.status` reported the pump running on schedule 3 — so
-those fields appear not to be populated on this installation.
+**"Deck cover"** (class `windowcoverings`) — `windowcoverings_state` for the
+usual up/stop/down tile control, plus a `cover_state` capability with the five
+real, measured positions (open/closed/opening/closing/stopped) for flows and
+display. Control is locked behind a per-device setting, off by default — see
+[Safety](#safety) below.
 
-The cover status codes are not documented by the API. They were measured on
-13-09-2026 by moving the cover and reading `cover.status.status`: `1` open,
-`2` closed, `3` opening, `4` closing, `5` stopped part-way.
+**"Pool lighting"** (class `light`) — on/off. Next/reset-colour buttons appear
+only when the installation actually has an RGB light (`spec.lighting_type`);
+a single-colour installation doesn't get dead buttons.
 
-The cover takes about 180 seconds to travel end to end, in either direction.
-Note that `cover.status` only refreshes when the pool reports an event, so a
-cover that has finished opening can still read as `opening` for a while, and the
-gap between two status timestamps is an upper bound rather than a travel time.
+Which capabilities exist on a given installation is decided from the `spec`
+block the API returns (§2.6), not from whether a field happens to contain a
+number — e.g. no ppm-chlorine capability without a CLM sensor, no cover device
+without a cover. The pool device re-checks `spec` on every poll, so newly
+enabled hardware is picked up automatically.
 
-Polling interval is configurable per device (15–300 s, default 30 s).
-At default settings the app makes ~2 requests per minute, well under the
-60 req/min rate limit.
+Flow cards are not hand-written: Homey generates trigger/condition/action
+cards automatically from each capability (a boolean like `alarm_dryrun` gets
+on/off triggers and a condition for free, a duration variant like "pH is
+below X for longer than…", etc.) — no manual `flow` section in app.json.
+
+## Deliberately narrow scope
+
+This app exposes less than the API — and less than an earlier draft of this
+app — supports. Only three things are controllable: the deck cover, the
+lighting, and the pool's target temperature, because those are what's
+actually operated often enough to be worth a Homey tile or a flow action.
+Everything else (pausing the whole controller, changing filter speed, a
+backwash cycle, a shock chlorination dose) is a maintenance-style action used
+a handful of times a year at most, with real physical or chemical
+consequences — that belongs in a deliberate decision in SmartPoolConnect's
+own app or website, not one tap away on a Homey tile or behind a flow
+condition nobody double-checked at 3am. `filter_speed` stays visible as a
+plain read-only status value (what speed is configured right now) rather
+than disappearing outright — only the ability to change it is gone.
+`lib/api.js` still implements the full read/write contract from the proposal
+(`patchModule`, `readModifyWrite`, `sendCommand`) — nothing here is a
+capability limit of the API, only of what this app chooses to surface.
+
+## Where values come from — the short version
+
+- **Measurements** (temperature, pH, water level, pump current): `metrics`.
+- **Settings shown read-only** (filter speed): `config`.
+- **Settings this app writes** (target temperature, lighting on/off): `config`.
+- **Pump state and deck cover position**: `status` — the only source for
+  those two, despite being a pool-wide snapshot that can lag by hours. See
+  §2.3 of the proposal for why `filter.metrics.pump_speed` is not used here.
+- **Dry-run alarm**: `filter.status.pump_speed > 0 && filter.status.pump_status > 0`
+  combined with a `NO_FLOW` code (`201` or `-28`) on the pH or Cl channel —
+  never on `201` alone, which is normal whenever the pump is idle.
+
+`lib/mapping.js` is the single place all of this lives, with the measurement
+that justifies each rule next to it, and `test/mapping.test.js` pins those
+rules down against the exact values from the proposal.
+
+## Safety
+
+Moving the deck cover is a physical action (entrapment risk), and the stop
+command also goes through the cloud — it is **not** a local emergency stop.
+The cover device has a per-device setting **"Allow cover control"**, off by
+default; while it's off the cover is read-only and both the tile controls and
+any flow actions are rejected with a clear error. No command is ever retried
+automatically after a timeout, because it may already have been received.
+
+## Authentication and the repair flow
+
+Both an `spc_...` API key and a temporary OAuth access token are supported —
+whichever you have. The pairing flow asks which one you're using. A key is
+recommended: it's valid for about a year. A token is not a standard JWT and
+carries no readable expiry, so it can stop working at any moment.
+
+When a credential is rejected (HTTP 401), the affected device goes
+unavailable with a message pointing at **Repair**, where you paste a new key
+or token without losing the device or its flows. Because each of the three
+devices keeps its own copy of the credential (see
+[Design note](#design-note-why-three-separate-pairing-flows) below), a token
+rotation means repairing all three — one more reason to move to a permanent
+API key once SmartPoolConnect issues one.
+
+A 403 with `missing_scope` on a write disables further write attempts on that
+device (reads keep working); the same status on the read itself means even
+`pools:read`/`controls:read`/`history:read` is missing, which takes the whole
+device unavailable instead.
+
+## Design note: why three separate pairing flows
+
+The proposal describes pairing once and getting all three devices. In
+practice, the Homey Apps SDK does not let one driver's pairing session create
+devices that belong to a *different* driver — only the driver whose pairing
+screen the user opened can add devices in that session. This app therefore
+follows the pattern real multi-device Homey apps use for a hub-plus-accessories
+setup: pair the "Pool" device first (full credential entry), then pair
+"Deck cover" and "Pool lighting" — their pairing screen simply lists the
+pool(s) already added and attaches a device to whichever one you pick, reusing
+its stored credential. It's two or three short pairing steps instead of one,
+but each step is a single list-and-confirm click.
 
 ## Requirements
 
 - A Homey Pro (custom Homey apps run only on Pro; Cloud/Bridge are not
   supported).
-- A SmartPoolConnect API key. Keys are issued by your pool installer or
-  by emailing `api-support@smartpoolconnect.eu`. Keys start with `spc_`.
+- A SmartPoolConnect API key (`spc_...`, from your installer or
+  `api-support@smartpoolconnect.eu`) or an access token from a logged-in
+  browser session.
 - Node.js ≥ 18 and the Athom CLI on your computer for sideloading.
 
 ## Install (sideload)
@@ -68,80 +143,111 @@ cd eps-pool-connector/prototypes/smartpoolconnect-homey
 npm install
 npm install -g homey
 homey login
-homey app run
+homey select        # pick your Homey Pro once; only needed if you have more than one
+homey app install
 ```
 
-`homey app run` builds the app and pushes it to a Homey Pro on your network
-in development mode. As long as it is running the app is alive on your Homey.
-Press `Ctrl+C` to stop. For permanent installation, use `homey app install`.
+`homey app install` builds the app and installs it **permanently** on the
+Homey Pro — it keeps running after your computer is off, and survives a
+Homey reboot. Use `homey app run` instead only when actively developing: it
+streams live logs but uninstalls the app the moment the command is
+interrupted, taking any devices paired under it down with it — don't use it
+against a Homey Pro you're relying on.
 
 ## Setup in Homey
 
-1. Open the Homey app on your phone → **Devices** → **+ Add device** →
-   **Smart Pool Connect** → **Pool**.
-2. Paste your `spc_…` API key. Leave the base URL on the default unless
-   support tells you otherwise.
-3. Pick your pool from the list and confirm.
+1. **Devices → + Add device → Smart Pool Connect → Pool.** Choose API key or
+   access token. For a token, paste the full `connect_session` cookie value
+   from a logged-in browser session as-is — the app extracts the token for
+   you, no manual decoding needed. Pick your pool from the list.
+2. **+ Add device → Smart Pool Connect → Deck cover** (if your pool has one) —
+   pick the pool you just added.
+3. **+ Add device → Smart Pool Connect → Pool lighting** (if your pool has
+   lighting) — same idea.
+4. On the "Deck cover" device's settings, turn on **Allow cover control**
+   once you're ready to let Homey move it.
 
-## Settings (per device)
+## Updating an existing install
 
-- **Poll interval (seconds)** — how often the app fetches status. Default
-  30 s. Lower means faster updates but more API requests; the API allows
-  ~60 requests/minute per key in total.
-- **API base URL** — only change if SmartPoolConnect tells you to.
+```bash
+git pull
+npm install
+homey app validate --level publish
+homey app install
+```
 
-## Why no write actions yet?
+`homey app install` re-packs and re-installs over the existing app — paired
+devices, their settings and any flows survive. It needs to run from the same
+local network as the Homey Pro (or with `homey select` pointed at it); it is
+not something a computer that's asleep or off can do, so an update only takes
+effect the next time you run this from a machine that's actually reachable.
 
-**This section is outdated.** It was written before the SmartPoolConnect API
-documentation covering commands became available, and claimed that control
-actions only existed on `www.smartpoolconnect.eu` behind a web-session cookie.
-That is not the case: the official API exposes them on
-`api.smartpoolconnect.eu` with `X-API-Key`, namely
+## Settings
 
-- `POST /pool/{pid}/cmd/{command}` — `cover_open`, `cover_stop`, `cover_close`,
-  `backwash`, `shock_start`, `shock_stop`, `lighting_next`, `lighting_reset`;
-- `PATCH /pool/{pid}/lighting` with `{"always_active": true|false}` for
-  lighting on/off (it is a setting, not a command);
-- `PATCH /pool/{pid}/spec` with `{"pause": true|false}` to pause the controller;
-- `PATCH /pool/{pid}/filter` for pump speed and schedules.
+- **Pool → Poll interval (seconds)** — how often the shared poller fetches
+  `GET /pool/{pid}`, once per interval regardless of how many of the three
+  devices are subscribed (§4.3). Default 30 s, ~2 of the 60 requests/minute
+  budget. 15–300 s.
+- **Deck cover → Allow cover control** — see [Safety](#safety).
 
-The [`smartpoolconnect-cli`](../smartpoolconnect-cli/) prototype already uses
-that route successfully — the deck cover has actually been opened and closed
-through `POST /pool/{pid}/cmd/cover_open|cover_close`. What is missing here is
-the implementation, not the API.
+## Known open points
 
-Note that those successful calls used an OAuth token taken from a browser
-session, because no `spc_…` API key has been issued yet. A token works, but it
-expires; a Homey app runs unattended and cannot ask for a fresh one. The
-proposal therefore supports both credential types plus a repair flow, and an
-API key with `pools:read` and `controls:write` is still worth requesting via
-`api-support@smartpoolconnect.eu`.
-
-See [the Homey app proposal](../../docs/homey-app-voorstel.md) for how the
-read and control features are planned to fit together.
+- **`spec.wl_hys_*` field names are not confirmed.** The proposal only
+  establishes the *prefix*; this app takes the largest absolute value among
+  any `spec` key starting with `wl_hys` as the water-level-deviation
+  threshold, falling back to 2 cm if none is present. Worth confirming
+  against a real `spec` payload (`pool_test.py config spec`) and adjusting
+  `PoolDevice#_levelThreshold` if the real field names differ.
+- **`level.metrics.delta`'s sign convention (too high vs. too low) is not
+  independently confirmed.** `measure_water_level_delta` passes the API value
+  straight through; the proposal's own example only shows both `value` and
+  `delta` moving together during a cover-open event, which doesn't establish
+  which sign means "too high" — worth checking against a real reading taken
+  while intentionally over/under target.
+- **Filter speed, controller pause, backwash and shock chlorination are all
+  read-only or absent by design** — see
+  [Deliberately narrow scope](#deliberately-narrow-scope). The documented
+  "medium filter speed while the cover is open" recipe (§10.4) is therefore
+  not implemented as a flow action here; it would need `filter_speed` to
+  become setable again via `readModifyWrite`, which `lib/api.js` still
+  supports if that trade-off changes.
+- **The `spc_...` API key is still pending** from SmartPoolConnect (§7);
+  until then, pair with an access token and expect to use the repair flow
+  when it expires.
 
 ## Development
 
 ```bash
-homey app validate --level publish   # full validator
+npm test                             # unit tests for lib/api.js and lib/mapping.js
+homey app validate --level publish   # full validator (needs the Athom CLI)
 homey app run                        # sideload + hot-reload
 homey app build                      # build artefact
 ```
 
-The project is plain JavaScript, no transpile step. Layout:
+Plain JavaScript, no transpile step. Layout:
 
 ```
-app.json                    Manifest (capabilities, driver, settings)
-app.js                      App entry point
-lib/api.js                  Stateless API client
-drivers/pool/driver.js      Pair flow
-drivers/pool/device.js      Polling + capability mapping
-drivers/pool/pair/*.html    Pair UI (credentials → pool list)
+app.json                      Manifest: capabilities, drivers, settings
+app.js                        PoolPoller registry, shared per pool-UUID
+lib/api.js                    API client: auth, rate limit, read/write, redaction
+lib/poller.js                 One shared poll per pool, with post-write refresh bursts
+lib/mapping.js                Codes → capability values, spec → capability list
+lib/write-guard.js            Shared 401/403 handling for all device writes
+drivers/pool/                 Pair flow (credentials → pool list), main device
+drivers/cover/                Pairs by picking an existing pool device
+drivers/light/                Same
+drivers/*/repair/*.html       Paste a new key or token after a 401
+locales/en.json, locales/nl.json
+test/                         node --test unit tests (not bundled into the app)
 ```
+
+[`prototypes/smartpoolconnect-cli/`](../smartpoolconnect-cli/) remains useful
+alongside this app: it's the fastest way to check a raw API response or
+confirm a `spec` field without touching Homey (§10.7).
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-This project is not affiliated with SmartPoolConnect B.V. SmartPoolConnect
-is a trademark of its respective owner.
+This project is not affiliated with SmartPoolConnect B.V. SmartPoolConnect is
+a trademark of its respective owner.
