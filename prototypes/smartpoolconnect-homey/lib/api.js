@@ -13,6 +13,53 @@ function redact(text, secrets) {
   return out;
 }
 
+// De SmartPoolConnect-website zet geen kaal token in een cookie, maar een
+// connect_session-cookie die een base64url-blob is met daarin (onder meer)
+// tokens.access_token. Een gebruiker die "een token pakken uit de browser"
+// probeert, kopieert dus bijna altijd deze hele cookiewaarde — niet het kale
+// token, dat er middenin verstopt zit. In plaats van dat verschil aan de
+// gebruiker uit te leggen (en ze een los scriptje te laten draaien), probeert
+// de pairing-flow dit hier zelf te decoderen; lukt dat niet, dan behandelt hij
+// de invoer gewoon als het kale token, zoals eerst. Zie ook
+// prototypes/smartpoolconnect-cli/pool_test.py#token_from_cookie, waar dezelfde
+// aanpak vandaan komt.
+function tokenFromCookie(raw) {
+  let value = (raw || '').trim().replace(/^["']/, '').replace(/["']$/, '');
+  if (value.startsWith('connect_session=')) {
+    value = value.slice('connect_session='.length).split(';')[0];
+  }
+  const payload = decodeURIComponent(value).split('.')[0];
+  const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const decoded = Buffer.from(padded, 'base64').toString('utf8');
+  const session = JSON.parse(decoded);
+  const token = session?.tokens?.access_token;
+  if (typeof token !== 'string' || !token.trim() || /\s/.test(token)) {
+    throw new Error('no access_token found in decoded value');
+  }
+  return token;
+}
+
+// Voor het 'token'-credentialtype: accepteer zowel een rauwe connect_session-
+// cookiewaarde als een reeds uitgepakt token. Een echt API-key ('spc_...')
+// gaat hier nooit doorheen — dat pad wordt alleen voor credential.type ===
+// 'token' aangeroepen.
+function normalizeTokenInput(raw) {
+  try {
+    return tokenFromCookie(raw);
+  } catch (_) {
+    return (raw || '').trim();
+  }
+}
+
+// Gedeeld door alle drie de drivers (pool/cover/light), zowel bij het pairen
+// als bij repair: normaliseer alleen het 'token'-type, een API-key ('spc_...')
+// gaat ongemoeid door.
+function normalizeCredential(credential) {
+  if (!credential || credential.type !== 'token') return credential;
+  return { type: 'token', value: normalizeTokenInput(credential.value) };
+}
+
 class ApiError extends Error {
   constructor(message, status, body) {
     super(message);
@@ -149,4 +196,12 @@ class SmartPoolConnectClient {
   }
 }
 
-module.exports = { SmartPoolConnectClient, ApiError, DEFAULT_BASE_URL, redact };
+module.exports = {
+  SmartPoolConnectClient,
+  ApiError,
+  DEFAULT_BASE_URL,
+  redact,
+  tokenFromCookie,
+  normalizeTokenInput,
+  normalizeCredential,
+};

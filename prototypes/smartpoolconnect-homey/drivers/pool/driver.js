@@ -1,7 +1,9 @@
 'use strict';
 
 const Homey = require('homey');
-const { SmartPoolConnectClient, ApiError, DEFAULT_BASE_URL } = require('../../lib/api');
+const {
+  SmartPoolConnectClient, ApiError, DEFAULT_BASE_URL, normalizeCredential,
+} = require('../../lib/api');
 const { poolCapabilities } = require('../../lib/mapping');
 
 class PoolDriver extends Homey.Driver {
@@ -19,8 +21,9 @@ class PoolDriver extends Homey.Driver {
         throw new Error(cred?.type === 'token' ? 'Access token is required' : 'API key is required');
       }
 
+      const normalized = normalizeCredential({ type: cred.type, value: cred.value.trim() });
       const client = new SmartPoolConnectClient({
-        credential: { type: cred.type, value: cred.value.trim() },
+        credential: normalized,
         baseUrl: (url || '').trim() || DEFAULT_BASE_URL,
       });
 
@@ -33,7 +36,7 @@ class PoolDriver extends Homey.Driver {
         throw new Error(`Could not reach API: ${err.message}`);
       }
 
-      credential = { type: cred.type, value: cred.value.trim() };
+      credential = normalized;
       baseUrl = client.baseUrl;
       return { count: pools.length };
     });
@@ -68,7 +71,7 @@ class PoolDriver extends Homey.Driver {
       if (!credential || !credential.value || !credential.value.trim()) {
         throw new Error(credential?.type === 'token' ? 'Access token is required' : 'API key is required');
       }
-      await device.setNewCredential({ type: credential.type, value: credential.value.trim() });
+      await device.setNewCredential(normalizeCredential({ type: credential.type, value: credential.value.trim() }));
     });
   }
 }

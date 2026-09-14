@@ -2,7 +2,17 @@
 
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { SmartPoolConnectClient, ApiError, redact } = require('../lib/api');
+const {
+  SmartPoolConnectClient, ApiError, redact, tokenFromCookie, normalizeTokenInput, normalizeCredential,
+} = require('../lib/api');
+
+// Bouwt een connect_session-achtige waarde op: base64url(JSON) + '.' + signature,
+// zoals de echte cookie van smartpoolconnect.eu. Zie lib/api.js#tokenFromCookie.
+function fakeConnectSession(accessToken) {
+  const json = JSON.stringify({ tokens: { access_token: accessToken, refresh_token: 'refresh-xyz' }, user: { id: 1 } });
+  const b64url = Buffer.from(json).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${b64url}.somesignature`;
+}
 
 const originalFetch = global.fetch;
 afterEach(() => {
@@ -128,4 +138,38 @@ test('429 zet rateLimitReset zodat het volgende verzoek wacht', async () => {
 
   await assert.rejects(() => client.getPool('pid-1'));
   assert.ok(client.rateLimitReset > Date.now());
+});
+
+test('tokenFromCookie: pakt access_token uit een rauwe connect_session-waarde', () => {
+  const cookieValue = fakeConnectSession('the-real-access-token');
+  assert.equal(tokenFromCookie(cookieValue), 'the-real-access-token');
+});
+
+test('tokenFromCookie: werkt ook met het "connect_session=...; Path=/" formaat uit DevTools', () => {
+  const cookieValue = fakeConnectSession('the-real-access-token');
+  const fullCookieLine = `connect_session=${encodeURIComponent(cookieValue)}; Path=/; HttpOnly`;
+  assert.equal(tokenFromCookie(fullCookieLine), 'the-real-access-token');
+});
+
+test('tokenFromCookie: gooit een fout op een waarde die geen cookie is', () => {
+  assert.throws(() => tokenFromCookie('gewoon-een-los-token'));
+  assert.throws(() => tokenFromCookie(''));
+});
+
+test('normalizeTokenInput: decodeert een cookie, en laat een los token ongemoeid', () => {
+  const cookieValue = fakeConnectSession('the-real-access-token');
+  assert.equal(normalizeTokenInput(cookieValue), 'the-real-access-token');
+  assert.equal(normalizeTokenInput('al-een-kaal-token'), 'al-een-kaal-token');
+});
+
+test('normalizeCredential: alleen het token-type wordt genormaliseerd, een key blijft ongemoeid', () => {
+  const cookieValue = fakeConnectSession('the-real-access-token');
+  assert.deepEqual(
+    normalizeCredential({ type: 'token', value: cookieValue }),
+    { type: 'token', value: 'the-real-access-token' },
+  );
+  assert.deepEqual(
+    normalizeCredential({ type: 'key', value: 'spc_should_not_change' }),
+    { type: 'key', value: 'spc_should_not_change' },
+  );
 });

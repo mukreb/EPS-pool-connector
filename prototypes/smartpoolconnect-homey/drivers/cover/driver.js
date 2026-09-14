@@ -1,6 +1,7 @@
 'use strict';
 
 const Homey = require('homey');
+const { normalizeCredential } = require('../../lib/api');
 const { capabilityPlan } = require('../../lib/mapping');
 
 // Er is geen los "kies je zwembad" scherm nodig: Homey staat niet toe dat één
@@ -38,7 +39,7 @@ class CoverDriver extends Homey.Driver {
       if (!credential || !credential.value || !credential.value.trim()) {
         throw new Error(credential?.type === 'token' ? 'Access token is required' : 'API key is required');
       }
-      await device.setNewCredential({ type: credential.type, value: credential.value.trim() });
+      await device.setNewCredential(normalizeCredential({ type: credential.type, value: credential.value.trim() }));
     });
   }
 }
