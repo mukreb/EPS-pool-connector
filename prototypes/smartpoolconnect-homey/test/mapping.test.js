@@ -139,21 +139,24 @@ test('poolCapabilities: basis plus alleen wat spec toestaat', () => {
     wl_sensor: true,
     flow_alarm: true,
   });
-  assert.ok(full.includes('target_temperature'));
   assert.ok(full.includes('measure_chlorine'));
   assert.ok(full.includes('measure_water_level'));
   assert.ok(full.includes('alarm_water_level'));
   assert.ok(full.includes('alarm_dryrun'));
 });
 
-test('poolCapabilities: nooit backwash of shockchlorering, ongeacht spec (bewuste keuze, geen app.json-omissie)', () => {
+test('poolCapabilities: geen schrijfbare capabilities, ongeacht spec — pool-device is bewust alleen-lezen', () => {
+  // Bediening (afdekking, licht) staat op eigen devices; pauzeren, filtersnelheid
+  // instellen, streeftemperatuur, backwash en shockchlorering doet de gebruiker
+  // in de SmartPoolConnect-app/-website — dat zijn acties van een paar keer per
+  // jaar, niet iets voor een Homey-tegel of een verkeerd afgevuurde flow.
   const full = mapping.poolCapabilities({
     heating_enabled: true, clm_sensor: true, wl_sensor: true, flow_alarm: true, backwash_enabled: true,
   });
-  assert.ok(!full.includes('button.backwash'));
-  assert.ok(!full.includes('onoff.shock'));
-  assert.ok(!mapping.POOL_MANAGED_CAPABILITIES.includes('button.backwash'));
-  assert.ok(!mapping.POOL_MANAGED_CAPABILITIES.includes('onoff.shock'));
+  for (const writable of ['button.backwash', 'onoff.shock', 'onoff.pause', 'target_temperature']) {
+    assert.ok(!full.includes(writable), `${writable} hoort niet meer in poolCapabilities()`);
+    assert.ok(!mapping.POOL_MANAGED_CAPABILITIES.includes(writable), `${writable} hoort niet meer in POOL_MANAGED_CAPABILITIES`);
+  }
 });
 
 test('poolCapabilities(null): v1-fallback (geen detail-endpoint) levert een lege lijst', () => {

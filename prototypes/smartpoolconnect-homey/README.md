@@ -1,30 +1,25 @@
 # Smart Pool Connect — Homey app
 
 Read live status from a [SmartPoolConnect](https://www.smartpoolconnect.eu) pool
-in [Homey](https://homey.app) and control the deck cover, lighting and filter
-pump. Built from [the app proposal](../../docs/homey-app-voorstel.md); see that
-document for the reasoning behind every design choice referenced below (§ numbers).
+in [Homey](https://homey.app), and control the two things worth automating —
+the deck cover and the lighting. Built from
+[the app proposal](../../docs/homey-app-voorstel.md); see that document for
+the reasoning behind the underlying API choices referenced below (§ numbers) —
+the capability scope described here is narrower than that proposal on purpose,
+see [Deliberately narrow scope](#deliberately-narrow-scope).
 
-**Status: v0.2.0 — read, control and configuration (fases 1–3).** Fase 4
-(translations polish, app-store assets, CI validation) is not done yet.
+**Status: v0.2.0.** Fase 4 (translations polish, app-store assets, CI
+validation) is not done yet.
 
 ## What you get
 
 Three devices are created per pool, all sharing one credential and one poller:
 
-**"Pool"** (class `sensor`) — water/ambient temperature, target temperature,
-pH, redox, free chlorine (only with a CLM sensor), water level, pump current,
+**"Pool"** (class `sensor`) — **read-only**: water/ambient temperature, pH,
+redox, free chlorine (only with a CLM sensor), water level, pump current,
 filter running/status/speed, dry-run alarm, fault alarm, water-level-deviation
-alarm, controller pause.
-
-Backwash and shock chlorination are deliberately **not** exposed as
-capabilities, even though the API supports both (`cmd/backwash`,
-`cmd/shock_start`/`shock_stop`). Both have real, physical/chemical
-consequences for the pool's water, and putting them one tap away on a Homey
-tile — or one misconfigured flow away — invites exactly the kind of accidental
-trigger that a maintenance action shouldn't have. Start those from
-SmartPoolConnect's own app or website, where they're a deliberate action, not
-a side effect.
+alarm. No settings, no buttons, nothing to accidentally trigger — see
+[Deliberately narrow scope](#deliberately-narrow-scope).
 
 **"Deck cover"** (class `windowcoverings`) — `windowcoverings_state` for the
 usual up/stop/down tile control, plus a `cover_state` capability with the five
@@ -44,15 +39,31 @@ enabled hardware is picked up automatically.
 
 Flow cards are not hand-written: Homey generates trigger/condition/action
 cards automatically from each capability (a boolean like `alarm_dryrun` gets
-on/off triggers and a condition for free, a setable enum like `filter_speed`
-gets a "set to…" action, etc.). That covers everything in §5 of the proposal
-except device online/offline, which is Homey's own generic
-device-(un)availability trigger, not something this app defines.
+on/off triggers and a condition for free, a duration variant like "pH is
+below X for longer than…", etc.) — no manual `flow` section in app.json.
+
+## Deliberately narrow scope
+
+This app exposes less than the API — and less than an earlier draft of this
+app — supports. The pool device is **read-only**: no target temperature, no
+filter-speed control, no controller pause, no backwash, no shock
+chlorination. Only the deck cover and the lighting are controllable, because
+those are the two things actually operated often enough to be worth a Homey
+tile or a flow action. Everything else (pausing the whole controller,
+changing filter speed, a backwash cycle, a shock chlorination dose) is a
+maintenance-style action used a handful of times a year at most, with real
+physical or chemical consequences — that belongs in a deliberate decision in
+SmartPoolConnect's own app or website, not one tap away on a Homey tile or
+behind a flow condition nobody double-checked at 3am. `lib/api.js` still
+implements the full read/write contract from the proposal (`patchModule`,
+`readModifyWrite`, `sendCommand`) — nothing here is a capability limit of the
+API, only of what this app chooses to surface.
 
 ## Where values come from — the short version
 
 - **Measurements** (temperature, pH, water level, pump current): `metrics`.
-- **Settings** (lighting on/off, target temperature, filter speed): `config`.
+- **Settings shown read-only** (filter speed): `config`.
+- **Lighting on/off** (the one setting this app actually writes): `config`.
 - **Pump state and deck cover position**: `status` — the only source for
   those two, despite being a pool-wide snapshot that can lag by hours. See
   §2.3 of the proposal for why `filter.metrics.pump_speed` is not used here.
@@ -158,13 +169,13 @@ turned off.
   threshold, falling back to 2 cm if none is present. Worth confirming
   against a real `spec` payload (`pool_test.py config spec`) and adjusting
   `PoolDevice#_levelThreshold` if the real field names differ.
-- **Per-schedule flow control (§10.4 "Filterschema 1/2/3 in- of uitschakelen")
-  is not exposed as separate capabilities.** `filter_speed` covers the
-  documented "medium while the cover is open" recipe via read-modify-write
-  (which always sends all three schedules back untouched); toggling
-  individual schedules by name would need three more capabilities and read
-  API confirmation of the exact fields, so it's left for later rather than
-  half-built.
+- **Filter speed, target temperature, controller pause, backwash and shock
+  chlorination are all read-only or absent by design** — see
+  [Deliberately narrow scope](#deliberately-narrow-scope). The documented
+  "medium filter speed while the cover is open" recipe (§10.4) is therefore
+  not implemented as a flow action here; it would need `filter_speed` to
+  become setable again via `readModifyWrite`, which `lib/api.js` still
+  supports if that trade-off changes.
 - **The `spc_...` API key is still pending** from SmartPoolConnect (§7);
   until then, pair with an access token and expect to use the repair flow
   when it expires.
@@ -186,6 +197,7 @@ app.js                        PoolPoller registry, shared per pool-UUID
 lib/api.js                    API client: auth, rate limit, read/write, redaction
 lib/poller.js                 One shared poll per pool, with post-write refresh bursts
 lib/mapping.js                Codes → capability values, spec → capability list
+lib/write-guard.js            Shared 401/403 handling for cover/light writes
 drivers/pool/                 Pair flow (credentials → pool list), main device
 drivers/cover/                Pairs by picking an existing pool device
 drivers/light/                Same

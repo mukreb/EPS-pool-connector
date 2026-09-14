@@ -103,8 +103,8 @@
       "type": "enum",
       "title": { "en": "Filter speed", "nl": "Filtersnelheid" },
       "getable": true,
-      "setable": true,
-      "uiComponent": "picker",
+      "setable": false,
+      "uiComponent": "sensor",
       "values": [
         { "id": "off", "title": { "en": "Off", "nl": "Uit" } },
         { "id": "low", "title": { "en": "Low", "nl": "Laag" } },
@@ -164,7 +164,6 @@
       "capabilities": [
         "measure_temperature",
         "measure_temperature.ambient",
-        "target_temperature",
         "measure_ph",
         "measure_redox",
         "measure_chlorine",
@@ -175,8 +174,7 @@
         "filter_speed",
         "alarm_dryrun",
         "alarm_fault",
-        "alarm_water_level",
-        "onoff.pause"
+        "alarm_water_level"
       ],
       "capabilitiesOptions": {
         "measure_temperature": {
@@ -185,18 +183,8 @@
         "measure_temperature.ambient": {
           "title": { "en": "Ambient temperature", "nl": "Luchttemperatuur" }
         },
-        "target_temperature": {
-          "min": 15,
-          "max": 35,
-          "step": 0.5
-        },
         "measure_current": {
           "title": { "en": "Pump current", "nl": "Pompstroom" }
-        },
-        "onoff.pause": {
-          "title": { "en": "Controller paused", "nl": "Controller gepauzeerd" },
-          "insightsTitleTrue": { "en": "Paused", "nl": "Gepauzeerd" },
-          "insightsTitleFalse": { "en": "Running", "nl": "Actief" }
         }
       },
       "platforms": ["local"],

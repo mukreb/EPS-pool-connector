@@ -145,14 +145,12 @@ const POOL_BASE_CAPABILITIES = [
   'filter_status',
   'filter_speed',
   'alarm_fault',
-  'onoff.pause',
 ];
 
 // Alleen aanwezig als spec het toestaat. Losse lijst (i.p.v. alleen afleidbaar
 // uit poolCapabilities) zodat device.js precies weet welke capabilities het
 // mag toevoegen/verwijderen zonder de basisset te raken.
 const POOL_OPTIONAL_CAPABILITIES = [
-  'target_temperature',
   'measure_chlorine',
   'measure_water_level',
   'alarm_dryrun',
@@ -174,7 +172,6 @@ function poolCapabilities(spec) {
   if (!spec) return [];
   const plan = capabilityPlan(spec);
   const capabilities = [...POOL_BASE_CAPABILITIES];
-  if (spec.heating_enabled === true) capabilities.push('target_temperature');
   if (plan.chlorinePpm) capabilities.push('measure_chlorine');
   if (plan.waterLevel) capabilities.push('measure_water_level', 'alarm_water_level');
   if (plan.dryRunAlarm) capabilities.push('alarm_dryrun');
