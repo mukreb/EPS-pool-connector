@@ -19,6 +19,9 @@ class LightDriver extends Homey.Driver {
       const poolDevices = poolDriver.getDevices();
       return poolDevices
         .filter((poolDevice) => {
+          // v1-zwembad: permanent geen spec, permanent geen werkende data. Zie
+          // drivers/cover/driver.js voor dezelfde check.
+          if (poolDevice.getStoreValue('limited') === true) return false;
           const spec = poolDevice.getStoreValue('lastSpec');
           return !spec || capabilityPlan(spec).lightDevice;
         })

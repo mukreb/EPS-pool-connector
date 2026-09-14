@@ -21,6 +21,10 @@ class CoverDriver extends Homey.Driver {
       const poolDevices = poolDriver.getDevices();
       return poolDevices
         .filter((poolDevice) => {
+          // v1-zwembad: GET /pool/{pid} geeft altijd 501, dus dit zwembad krijgt
+          // nooit een spec en dit device zou nooit werkende data krijgen — dit is
+          // geen "nog niet gepolld", maar permanent. Zie PoolDevice#_applyLimitedState.
+          if (poolDevice.getStoreValue('limited') === true) return false;
           const spec = poolDevice.getStoreValue('lastSpec');
           // Nog geen spec gezien (net gekoppeld, eerste poll onderweg): niet
           // blokkeren, gewoon aanbieden.

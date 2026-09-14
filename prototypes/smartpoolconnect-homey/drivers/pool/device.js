@@ -89,13 +89,19 @@ class PoolDevice extends Homey.Device {
   // Geen van de modules waar de capabilities hieronder uit gelezen worden is
   // bereikbaar zonder die detail-endpoint, dus alles verwijderen in plaats van
   // de laatst bekende (of default) set te laten staan met permanent kapotte
-  // besturing erin.
+  // besturing erin. `limited` (i.p.v. gewoon `lastSpec` op null laten staan) is
+  // hoe de cover/light pairing-flows dit onderscheiden van "nog niet gepolld,
+  // spec komt nog": een v1-zwembad krijgt namelijk nooit een spec, dus zonder
+  // deze vlag zou het voor altijd als "wacht nog even" aangeboden blijven
+  // worden in plaats van uitgesloten.
   async _applyLimitedState(summary) {
+    await this.setStoreValue('limited', true).catch(this.error);
     await this._syncCapabilities([]);
     this.log(`Limited (v1) status for ${this.pid}: ${summary.status || 'unknown'}`);
   }
 
   async _applyFullState(pool) {
+    await this.setStoreValue('limited', false).catch(this.error);
     const spec = pool.spec || {};
     await this.setStoreValue('lastSpec', spec).catch(this.error);
     await this._syncCapabilities(mapping.poolCapabilities(spec));
