@@ -15,7 +15,16 @@ Three devices are created per pool, all sharing one credential and one poller:
 **"Pool"** (class `sensor`) — water/ambient temperature, target temperature,
 pH, redox, free chlorine (only with a CLM sensor), water level, pump current,
 filter running/status/speed, dry-run alarm, fault alarm, water-level-deviation
-alarm, controller pause, shock chlorination, backwash button.
+alarm, controller pause.
+
+Backwash and shock chlorination are deliberately **not** exposed as
+capabilities, even though the API supports both (`cmd/backwash`,
+`cmd/shock_start`/`shock_stop`). Both have real, physical/chemical
+consequences for the pool's water, and putting them one tap away on a Homey
+tile — or one misconfigured flow away — invites exactly the kind of accidental
+trigger that a maintenance action shouldn't have. Start those from
+SmartPoolConnect's own app or website, where they're a deliberate action, not
+a side effect.
 
 **"Deck cover"** (class `windowcoverings`) — `windowcoverings_state` for the
 usual up/stop/down tile control, plus a `cover_state` capability with the five

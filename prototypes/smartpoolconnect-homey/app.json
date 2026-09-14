@@ -176,9 +176,7 @@
         "alarm_dryrun",
         "alarm_fault",
         "alarm_water_level",
-        "onoff.pause",
-        "onoff.shock",
-        "button.backwash"
+        "onoff.pause"
       ],
       "capabilitiesOptions": {
         "measure_temperature": {
@@ -199,15 +197,6 @@
           "title": { "en": "Controller paused", "nl": "Controller gepauzeerd" },
           "insightsTitleTrue": { "en": "Paused", "nl": "Gepauzeerd" },
           "insightsTitleFalse": { "en": "Running", "nl": "Actief" }
-        },
-        "onoff.shock": {
-          "title": { "en": "Shock chlorination", "nl": "Shockchlorering" },
-          "insightsTitleTrue": { "en": "Active", "nl": "Actief" },
-          "insightsTitleFalse": { "en": "Inactive", "nl": "Inactief" }
-        },
-        "button.backwash": {
-          "title": { "en": "Start backwash", "nl": "Backwash starten" },
-          "maintenanceAction": true
         }
       },
       "platforms": ["local"],

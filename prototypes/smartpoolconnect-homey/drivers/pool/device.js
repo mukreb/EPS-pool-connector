@@ -55,19 +55,6 @@ class PoolDevice extends Homey.Device {
       await this.client.readModifyWrite(this.pid, 'spec', { pause: !!value });
       this._poller.refreshAfter('patch');
     }));
-
-    // Shockchlorering heeft geen leesbare status in de API; de knop stuurt alleen
-    // het commando en zet de capability daarna optimistisch, want er is geen
-    // andere bron om op terug te vallen.
-    this.registerCapabilityListener('onoff.shock', (value) => this._writeGuard.run(async () => {
-      await this.client.sendCommand(this.pid, value ? 'shock_start' : 'shock_stop');
-      this._poller.refreshAfter('command');
-    }));
-
-    this.registerCapabilityListener('button.backwash', () => this._writeGuard.run(async () => {
-      await this.client.sendCommand(this.pid, 'backwash');
-      this._poller.refreshAfter('command');
-    }));
   }
 
   async onUninit() {

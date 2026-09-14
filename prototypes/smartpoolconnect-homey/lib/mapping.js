@@ -113,6 +113,11 @@ function chlorinePpm(pool) {
 
 // spec vertelt welke hardware er is; dat bepaalt welke capabilities zinvol zijn
 // (zie §10.4). Nooit "is dit veld toevallig gevuld" gebruiken.
+//
+// Bewust geen backwash/shockchlorering-acties: dat zijn onderhoudsacties met
+// echte chemische/waterimpact die een gebruiker bewust in de eigen
+// SmartPoolConnect-app of -website hoort te starten, niet per ongeluk via een
+// Homey-tegel of een verkeerd afgevuurde flow.
 function capabilityPlan(spec) {
   spec = spec || {};
   return {
@@ -122,7 +127,6 @@ function capabilityPlan(spec) {
     chlorinePpm: spec.clm_sensor === true,
     waterLevel: spec.wl_sensor === true,
     dryRunAlarm: spec.flow_alarm === true,
-    backwash: spec.backwash_enabled === true,
   };
 }
 
@@ -142,7 +146,6 @@ const POOL_BASE_CAPABILITIES = [
   'filter_speed',
   'alarm_fault',
   'onoff.pause',
-  'onoff.shock',
 ];
 
 // Alleen aanwezig als spec het toestaat. Losse lijst (i.p.v. alleen afleidbaar
@@ -154,7 +157,6 @@ const POOL_OPTIONAL_CAPABILITIES = [
   'measure_water_level',
   'alarm_dryrun',
   'alarm_water_level',
-  'button.backwash',
 ];
 
 // Alles wat _syncCapabilities beheert: de basisset plus wat optioneel is. Voor
@@ -176,7 +178,6 @@ function poolCapabilities(spec) {
   if (plan.chlorinePpm) capabilities.push('measure_chlorine');
   if (plan.waterLevel) capabilities.push('measure_water_level', 'alarm_water_level');
   if (plan.dryRunAlarm) capabilities.push('alarm_dryrun');
-  if (plan.backwash) capabilities.push('button.backwash');
   return capabilities;
 }
 

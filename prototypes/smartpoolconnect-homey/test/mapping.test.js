@@ -107,7 +107,6 @@ test('capabilityPlan volgt spec, niet of een veld toevallig gevuld is (§2.6)', 
   assert.equal(plan.chlorinePpm, false, 'geen CLM-sonde, dus geen ppm-capability');
   assert.equal(plan.waterLevel, true);
   assert.equal(plan.dryRunAlarm, true);
-  assert.equal(plan.backwash, true);
 });
 
 test('capabilityPlan met RGB-licht en CLM-sonde', () => {
@@ -133,21 +132,28 @@ test('poolCapabilities: basis plus alleen wat spec toestaat', () => {
   }
   assert.ok(!noExtras.includes('measure_chlorine'));
   assert.ok(!noExtras.includes('measure_water_level'));
-  assert.ok(!noExtras.includes('button.backwash'));
 
   const full = mapping.poolCapabilities({
     heating_enabled: true,
     clm_sensor: true,
     wl_sensor: true,
     flow_alarm: true,
-    backwash_enabled: true,
   });
   assert.ok(full.includes('target_temperature'));
   assert.ok(full.includes('measure_chlorine'));
   assert.ok(full.includes('measure_water_level'));
   assert.ok(full.includes('alarm_water_level'));
   assert.ok(full.includes('alarm_dryrun'));
-  assert.ok(full.includes('button.backwash'));
+});
+
+test('poolCapabilities: nooit backwash of shockchlorering, ongeacht spec (bewuste keuze, geen app.json-omissie)', () => {
+  const full = mapping.poolCapabilities({
+    heating_enabled: true, clm_sensor: true, wl_sensor: true, flow_alarm: true, backwash_enabled: true,
+  });
+  assert.ok(!full.includes('button.backwash'));
+  assert.ok(!full.includes('onoff.shock'));
+  assert.ok(!mapping.POOL_MANAGED_CAPABILITIES.includes('button.backwash'));
+  assert.ok(!mapping.POOL_MANAGED_CAPABILITIES.includes('onoff.shock'));
 });
 
 test('poolCapabilities(null): v1-fallback (geen detail-endpoint) levert een lege lijst', () => {
