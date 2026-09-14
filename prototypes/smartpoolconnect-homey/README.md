@@ -1,8 +1,8 @@
 # Smart Pool Connect — Homey app
 
 Read live status from a [SmartPoolConnect](https://www.smartpoolconnect.eu) pool
-in [Homey](https://homey.app), and control the two things worth automating —
-the deck cover and the lighting. Built from
+in [Homey](https://homey.app), and control the things worth automating — the
+deck cover, the lighting, and the heating setpoint. Built from
 [the app proposal](../../docs/homey-app-voorstel.md); see that document for
 the reasoning behind the underlying API choices referenced below (§ numbers) —
 the capability scope described here is narrower than that proposal on purpose,
@@ -15,11 +15,15 @@ validation) is not done yet.
 
 Three devices are created per pool, all sharing one credential and one poller:
 
-**"Pool"** (class `sensor`) — **read-only**: water/ambient temperature, pH,
-redox, free chlorine (only with a CLM sensor), water level, pump current,
-filter running/status/speed, dry-run alarm, fault alarm, water-level-deviation
-alarm. No settings, no buttons, nothing to accidentally trigger — see
-[Deliberately narrow scope](#deliberately-narrow-scope).
+**"Pool"** (class `sensor`) — read-only except for one setting: water/ambient
+temperature, **target temperature (setable)**, pH, redox, free chlorine (only
+with a CLM sensor), water level plus its signed deviation from the target
+level (`measure_water_level_delta`, cm — straight from the API's `level.metrics.delta`,
+sign convention not independently confirmed, see
+[Known open points](#known-open-points)), pump current, filter
+running/status/speed, dry-run alarm, fault alarm, water-level-deviation alarm.
+No pause button, no filter-speed control, no backwash, no shock
+chlorination — see [Deliberately narrow scope](#deliberately-narrow-scope).
 
 **"Deck cover"** (class `windowcoverings`) — `windowcoverings_state` for the
 usual up/stop/down tile control, plus a `cover_state` capability with the five
@@ -45,25 +49,26 @@ below X for longer than…", etc.) — no manual `flow` section in app.json.
 ## Deliberately narrow scope
 
 This app exposes less than the API — and less than an earlier draft of this
-app — supports. The pool device is **read-only**: no target temperature, no
-filter-speed control, no controller pause, no backwash, no shock
-chlorination. Only the deck cover and the lighting are controllable, because
-those are the two things actually operated often enough to be worth a Homey
-tile or a flow action. Everything else (pausing the whole controller,
-changing filter speed, a backwash cycle, a shock chlorination dose) is a
-maintenance-style action used a handful of times a year at most, with real
-physical or chemical consequences — that belongs in a deliberate decision in
-SmartPoolConnect's own app or website, not one tap away on a Homey tile or
-behind a flow condition nobody double-checked at 3am. `lib/api.js` still
-implements the full read/write contract from the proposal (`patchModule`,
-`readModifyWrite`, `sendCommand`) — nothing here is a capability limit of the
-API, only of what this app chooses to surface.
+app — supports. Only three things are controllable: the deck cover, the
+lighting, and the pool's target temperature, because those are what's
+actually operated often enough to be worth a Homey tile or a flow action.
+Everything else (pausing the whole controller, changing filter speed, a
+backwash cycle, a shock chlorination dose) is a maintenance-style action used
+a handful of times a year at most, with real physical or chemical
+consequences — that belongs in a deliberate decision in SmartPoolConnect's
+own app or website, not one tap away on a Homey tile or behind a flow
+condition nobody double-checked at 3am. `filter_speed` stays visible as a
+plain read-only status value (what speed is configured right now) rather
+than disappearing outright — only the ability to change it is gone.
+`lib/api.js` still implements the full read/write contract from the proposal
+(`patchModule`, `readModifyWrite`, `sendCommand`) — nothing here is a
+capability limit of the API, only of what this app chooses to surface.
 
 ## Where values come from — the short version
 
 - **Measurements** (temperature, pH, water level, pump current): `metrics`.
 - **Settings shown read-only** (filter speed): `config`.
-- **Lighting on/off** (the one setting this app actually writes): `config`.
+- **Settings this app writes** (target temperature, lighting on/off): `config`.
 - **Pump state and deck cover position**: `status` — the only source for
   those two, despite being a pool-wide snapshot that can lag by hours. See
   §2.3 of the proposal for why `filter.metrics.pump_speed` is not used here.
@@ -169,8 +174,14 @@ turned off.
   threshold, falling back to 2 cm if none is present. Worth confirming
   against a real `spec` payload (`pool_test.py config spec`) and adjusting
   `PoolDevice#_levelThreshold` if the real field names differ.
-- **Filter speed, target temperature, controller pause, backwash and shock
-  chlorination are all read-only or absent by design** — see
+- **`level.metrics.delta`'s sign convention (too high vs. too low) is not
+  independently confirmed.** `measure_water_level_delta` passes the API value
+  straight through; the proposal's own example only shows both `value` and
+  `delta` moving together during a cover-open event, which doesn't establish
+  which sign means "too high" — worth checking against a real reading taken
+  while intentionally over/under target.
+- **Filter speed, controller pause, backwash and shock chlorination are all
+  read-only or absent by design** — see
   [Deliberately narrow scope](#deliberately-narrow-scope). The documented
   "medium filter speed while the cover is open" recipe (§10.4) is therefore
   not implemented as a flow action here; it would need `filter_speed` to

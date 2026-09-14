@@ -63,6 +63,15 @@
       "uiComponent": "sensor",
       "decimals": 1
     },
+    "measure_water_level_delta": {
+      "type": "number",
+      "title": { "en": "Water level deviation", "nl": "Waterniveau t.o.v. streefniveau" },
+      "units": { "en": "cm", "nl": "cm" },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "decimals": 2
+    },
     "filter_running": {
       "type": "boolean",
       "title": { "en": "Filter pump", "nl": "Filterpomp" },
@@ -164,10 +173,12 @@
       "capabilities": [
         "measure_temperature",
         "measure_temperature.ambient",
+        "target_temperature",
         "measure_ph",
         "measure_redox",
         "measure_chlorine",
         "measure_water_level",
+        "measure_water_level_delta",
         "measure_current",
         "filter_running",
         "filter_status",
@@ -177,6 +188,11 @@
         "alarm_water_level"
       ],
       "capabilitiesOptions": {
+        "target_temperature": {
+          "min": 15,
+          "max": 35,
+          "step": 0.5
+        },
         "measure_temperature": {
           "title": { "en": "Water temperature", "nl": "Watertemperatuur" }
         },

@@ -2,6 +2,7 @@
 
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
+const { WriteGuard } = require('../../lib/write-guard');
 const mapping = require('../../lib/mapping');
 
 // Hoe lang na de laatste geziene afdekbeweging het waterniveau-alarm onderdrukt
@@ -11,15 +12,16 @@ const LEVEL_ALARM_SUPPRESSION_MS = 5 * 60 * 1000;
 const DEFAULT_LEVEL_THRESHOLD_CM = 2.0;
 
 class PoolDevice extends Homey.Device {
-  // Bewust een alleen-lezen device: geen enkele schrijfbare capability. Wie de
-  // controller wil pauzeren, de filtersnelheid of de streeftemperatuur wil
-  // aanpassen doet dat in de SmartPoolConnect-app of -website — acties die
-  // maar een paar keer per jaar voorkomen horen niet op een Homey-tegel of
-  // achter een flow-actie. Afdekking en verlichting zijn de veelgebruikte
-  // bedieningen en staan daarom op hun eigen devices (drivers/cover,
-  // drivers/light), niet hier.
+  // Op één schrijfbare capability na (target_temperature — de streeftemperatuur
+  // wordt wél vaak genoeg aangepast om een tegel/flow-actie te verdienen) is dit
+  // een alleen-lezen device. Controller pauzeren, filtersnelheid, backwash en
+  // shockchlorering doet de gebruiker in de SmartPoolConnect-app of -website —
+  // acties van een paar keer per jaar horen niet op een Homey-tegel of achter
+  // een flow-actie. Afdekking en verlichting zijn de veelgebruikte bedieningen
+  // en staan daarom op hun eigen devices (drivers/cover, drivers/light).
   async onInit() {
     this.pid = this.getData().id;
+    this._writeGuard = new WriteGuard(this);
     this._lastCoverMovementAt = 0;
 
     this._createClient();
@@ -27,6 +29,7 @@ class PoolDevice extends Homey.Device {
     this._poller.setInterval(this.getSetting('poll_interval'));
     this._poller.subscribe(this);
 
+    this._registerCapabilityListeners();
     this.log(`PoolDevice ${this.pid} initialised`);
   }
 
@@ -40,7 +43,15 @@ class PoolDevice extends Homey.Device {
     await this.setStoreValue('credential', credential);
     this._createClient();
     this._poller.setClient(this.client);
+    this._writeGuard.reset();
     await this.setAvailable().catch(this.error);
+  }
+
+  _registerCapabilityListeners() {
+    this.registerCapabilityListener('target_temperature', (value) => this._writeGuard.run(async () => {
+      await this.client.readModifyWrite(this.pid, 'temperature', { target: value });
+      this._poller.refreshAfter('patch');
+    }));
   }
 
   async onUninit() {
@@ -99,6 +110,12 @@ class PoolDevice extends Homey.Device {
     if (this.hasCapability('measure_water_level')) {
       await this._setIfNumber('measure_water_level', pool?.level?.metrics?.value);
     }
+    if (this.hasCapability('measure_water_level_delta')) {
+      await this._setIfNumber('measure_water_level_delta', pool?.level?.metrics?.delta);
+    }
+    if (this.hasCapability('target_temperature')) {
+      await this._setIfNumber('target_temperature', pool?.temperature?.config?.target);
+    }
     await this._setIfNumber('measure_current', pool?.filter?.metrics?.pump_current);
 
     const pumpStatusRaw = pool?.filter?.status?.pump_status;
@@ -147,12 +164,17 @@ class PoolDevice extends Homey.Device {
 
   // Brengt de daadwerkelijke capabilities van dit device in lijn met `desired`
   // (uit spec via §2.6, of een lege lijst voor een v1-zwembad zonder detail-
-  // endpoint). Reconcileert de hele beheerde set, niet alleen de optionele,
-  // zodat de v1-fallback ook de basiscapabilities kan wegnemen. Draait bij
-  // elke poll zodat een spec-wijziging (nieuwe hardware) vanzelf wordt opgepikt.
+  // endpoint). Reconcileert niet alleen de huidige beheerde set, maar ook
+  // alles wat het device toevallig al heeft — anders blijft een capability die
+  // in een oudere appversie wél bestond (bijv. de inmiddels verwijderde
+  // onoff.pause, onoff.shock, button.backwash) voor altijd op bestaande devices
+  // staan, want die naam komt dan nergens meer in de "bekende" lijst voor om als
+  // "weg te halen" te herkennen. Draait bij elke poll zodat een spec-wijziging
+  // (nieuwe hardware) vanzelf wordt opgepikt.
   async _syncCapabilities(desired) {
     const wanted = new Set(desired);
-    for (const capability of mapping.POOL_MANAGED_CAPABILITIES) {
+    const candidates = new Set([...mapping.POOL_MANAGED_CAPABILITIES, ...this.getCapabilities()]);
+    for (const capability of candidates) {
       const shouldHave = wanted.has(capability);
       const has = this.hasCapability(capability);
       if (shouldHave && !has) {
@@ -181,9 +203,10 @@ class PoolDevice extends Homey.Device {
       return;
     }
     if (err instanceof ApiError && err.status === 403) {
-      // Dit device heeft geen schrijfbare capabilities meer (zie onInit), dus
-      // een 403 kan hier alleen op de GET zelf optreden: zelfs
-      // pools:read/controls:read/history:read ontbreekt, en er is niets te tonen.
+      // 403 op de GET zelf betekent dat zelfs pools:read/controls:read/history:read
+      // ontbreekt - dan is er niets te tonen, in tegenstelling tot een 403 op de
+      // target_temperature-write (die alleen controls:write mist en de lezende
+      // kant met rust laat, afgehandeld door WriteGuard in lib/write-guard.js).
       await this.setUnavailable(this.homey.__('errors.missing_read_scope')).catch(this.error);
       return;
     }

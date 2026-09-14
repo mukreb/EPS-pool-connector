@@ -139,21 +139,24 @@ test('poolCapabilities: basis plus alleen wat spec toestaat', () => {
     wl_sensor: true,
     flow_alarm: true,
   });
+  assert.ok(full.includes('target_temperature'));
   assert.ok(full.includes('measure_chlorine'));
   assert.ok(full.includes('measure_water_level'));
+  assert.ok(full.includes('measure_water_level_delta'));
   assert.ok(full.includes('alarm_water_level'));
   assert.ok(full.includes('alarm_dryrun'));
 });
 
-test('poolCapabilities: geen schrijfbare capabilities, ongeacht spec — pool-device is bewust alleen-lezen', () => {
-  // Bediening (afdekking, licht) staat op eigen devices; pauzeren, filtersnelheid
-  // instellen, streeftemperatuur, backwash en shockchlorering doet de gebruiker
-  // in de SmartPoolConnect-app/-website — dat zijn acties van een paar keer per
-  // jaar, niet iets voor een Homey-tegel of een verkeerd afgevuurde flow.
+test('poolCapabilities: geen pauzeren/filtersnelheid-schrijven/backwash/shockchlorering, ongeacht spec', () => {
+  // Bediening (afdekking, licht, streeftemperatuur) staat op de betreffende
+  // devices/capabilities; de rest doet de gebruiker in de SmartPoolConnect-
+  // app/-website — dat zijn acties van een paar keer per jaar, niet iets voor
+  // een Homey-tegel of een verkeerd afgevuurde flow. target_temperature is
+  // bewust wél terug (vaker aangepast, dus wel een tegel/flow-actie waard).
   const full = mapping.poolCapabilities({
     heating_enabled: true, clm_sensor: true, wl_sensor: true, flow_alarm: true, backwash_enabled: true,
   });
-  for (const writable of ['button.backwash', 'onoff.shock', 'onoff.pause', 'target_temperature']) {
+  for (const writable of ['button.backwash', 'onoff.shock', 'onoff.pause']) {
     assert.ok(!full.includes(writable), `${writable} hoort niet meer in poolCapabilities()`);
     assert.ok(!mapping.POOL_MANAGED_CAPABILITIES.includes(writable), `${writable} hoort niet meer in POOL_MANAGED_CAPABILITIES`);
   }

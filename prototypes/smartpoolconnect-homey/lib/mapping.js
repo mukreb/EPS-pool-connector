@@ -151,8 +151,10 @@ const POOL_BASE_CAPABILITIES = [
 // uit poolCapabilities) zodat device.js precies weet welke capabilities het
 // mag toevoegen/verwijderen zonder de basisset te raken.
 const POOL_OPTIONAL_CAPABILITIES = [
+  'target_temperature',
   'measure_chlorine',
   'measure_water_level',
+  'measure_water_level_delta',
   'alarm_dryrun',
   'alarm_water_level',
 ];
@@ -172,8 +174,9 @@ function poolCapabilities(spec) {
   if (!spec) return [];
   const plan = capabilityPlan(spec);
   const capabilities = [...POOL_BASE_CAPABILITIES];
+  if (spec.heating_enabled === true) capabilities.push('target_temperature');
   if (plan.chlorinePpm) capabilities.push('measure_chlorine');
-  if (plan.waterLevel) capabilities.push('measure_water_level', 'alarm_water_level');
+  if (plan.waterLevel) capabilities.push('measure_water_level', 'measure_water_level_delta', 'alarm_water_level');
   if (plan.dryRunAlarm) capabilities.push('alarm_dryrun');
   return capabilities;
 }
