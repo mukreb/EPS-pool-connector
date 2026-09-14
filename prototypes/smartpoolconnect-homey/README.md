@@ -8,8 +8,12 @@ the reasoning behind the underlying API choices referenced below (§ numbers) �
 the capability scope described here is narrower than that proposal on purpose,
 see [Deliberately narrow scope](#deliberately-narrow-scope).
 
-**Status: v0.2.0.** Fase 4 (translations polish, app-store assets, CI
-validation) is not done yet.
+**Status: v0.2.0 — in daily use**, sideloaded and permanently installed
+(`homey app install`) on a real installation. Fase 4 (translations polish,
+app-store assets) is not done, and this app isn't published to the Homey App
+Store — sideloading is the intended way to run it; see
+[Deliberately narrow scope](#deliberately-narrow-scope) for why that's a
+deliberate choice, not a gap.
 
 ## What you get
 
@@ -139,24 +143,44 @@ cd eps-pool-connector/prototypes/smartpoolconnect-homey
 npm install
 npm install -g homey
 homey login
-homey app run
+homey select        # pick your Homey Pro once; only needed if you have more than one
+homey app install
 ```
 
-`homey app run` builds the app and pushes it to a Homey Pro on your network in
-development mode; it stays alive as long as the command runs. For permanent
-installation use `homey app install` instead — after that the computer can be
-turned off.
+`homey app install` builds the app and installs it **permanently** on the
+Homey Pro — it keeps running after your computer is off, and survives a
+Homey reboot. Use `homey app run` instead only when actively developing: it
+streams live logs but uninstalls the app the moment the command is
+interrupted, taking any devices paired under it down with it — don't use it
+against a Homey Pro you're relying on.
 
 ## Setup in Homey
 
 1. **Devices → + Add device → Smart Pool Connect → Pool.** Choose API key or
-   access token, paste it, pick your pool from the list.
+   access token. For a token, paste the full `connect_session` cookie value
+   from a logged-in browser session as-is — the app extracts the token for
+   you, no manual decoding needed. Pick your pool from the list.
 2. **+ Add device → Smart Pool Connect → Deck cover** (if your pool has one) —
    pick the pool you just added.
 3. **+ Add device → Smart Pool Connect → Pool lighting** (if your pool has
    lighting) — same idea.
 4. On the "Deck cover" device's settings, turn on **Allow cover control**
    once you're ready to let Homey move it.
+
+## Updating an existing install
+
+```bash
+git pull
+npm install
+homey app validate --level publish
+homey app install
+```
+
+`homey app install` re-packs and re-installs over the existing app — paired
+devices, their settings and any flows survive. It needs to run from the same
+local network as the Homey Pro (or with `homey select` pointed at it); it is
+not something a computer that's asleep or off can do, so an update only takes
+effect the next time you run this from a machine that's actually reachable.
 
 ## Settings
 
@@ -208,7 +232,7 @@ app.js                        PoolPoller registry, shared per pool-UUID
 lib/api.js                    API client: auth, rate limit, read/write, redaction
 lib/poller.js                 One shared poll per pool, with post-write refresh bursts
 lib/mapping.js                Codes → capability values, spec → capability list
-lib/write-guard.js            Shared 401/403 handling for cover/light writes
+lib/write-guard.js            Shared 401/403 handling for all device writes
 drivers/pool/                 Pair flow (credentials → pool list), main device
 drivers/cover/                Pairs by picking an existing pool device
 drivers/light/                Same
