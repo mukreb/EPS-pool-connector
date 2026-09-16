@@ -65,7 +65,6 @@ test('WriteGuard: een 500 die intern een oauth_api/403-afwijzing bevat, telt als
       'HTTP 500 on PATCH /pool/x/lighting: HTTP status client error (403 Forbidden) for url (http://oauth_api:3000/e/identity)',
       500,
       'HTTP status client error (403 Forbidden) for url (http://oauth_api:3000/e/identity)',
-      { upstreamAuthFailure: true },
     );
   }));
   assert.equal(guard.blocked, false);
@@ -75,7 +74,27 @@ test('WriteGuard: een 500 die intern een oauth_api/403-afwijzing bevat, telt als
   ]);
 });
 
-test('WriteGuard: een gewone 500 zonder upstreamAuthFailure blijft een onbehandelde fout', async () => {
+// Exact het scenario dat in de praktijk optrad op PATCH .../lighting: HTTP 400
+// met een gestructureerde auth.credentials_invalid-foutcode, geen 401/403/500.
+test('WriteGuard: een 400 met auth.credentials_invalid in de body telt ook als een afgewezen credential', async () => {
+  const device = fakeDevice();
+  const guard = new WriteGuard(device);
+
+  await assert.rejects(() => guard.run(async () => {
+    throw new ApiError(
+      'HTTP 400 on PATCH /pool/x/lighting: {"error":"auth.credentials_invalid"}',
+      400,
+      { error: 'auth.credentials_invalid' },
+    );
+  }));
+  assert.equal(guard.blocked, false);
+  assert.deepEqual(device.calls, [
+    ['setUnavailable', 'errors.unauthorized'],
+    ['notify', 'Pool: notifications.credential_invalid'],
+  ]);
+});
+
+test('WriteGuard: een gewone 500 zonder herkenbare auth-signatuur blijft een onbehandelde fout', async () => {
   const device = fakeDevice();
   const guard = new WriteGuard(device);
 

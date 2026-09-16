@@ -112,14 +112,23 @@ poll. Because each of the three devices keeps its own copy of the credential
 token rotation means repairing all three — one more reason to move to a
 permanent API key once SmartPoolConnect issues one.
 
-SmartPoolConnect doesn't always return a clean 401 for a rejected credential:
-on some endpoints its gateway returns a bare HTTP 500 whose body is a raw
-exception string from a failed internal call to its own `oauth_api`/identity
-service, with "403 Forbidden" in it. `lib/api.js#isUpstreamAuthFailure`
-recognizes that specific pattern (500 status, body mentioning both
-`oauth_api` and `403`) and treats it exactly like a 401 — unavailable,
-Repair hint, one notification. A 500 that doesn't match this pattern is left
-alone as a generic, transient error.
+Repairing one device also nudges the shared poller for that pool (see
+[Design note](#design-note-why-three-separate-pairing-flows)) to poll
+immediately (`lib/poller.js#pollNow`), so its sibling devices come back
+online right away too instead of waiting for the next scheduled round
+(up to `poll_interval`, default 30s, max 5 minutes).
+
+SmartPoolConnect doesn't consistently use HTTP 401 for a rejected credential.
+Observed so far, for what is functionally the same problem: a clean 401; a
+bare HTTP 500 whose body is a raw exception string from a failed internal
+call to its own `oauth_api`/identity service, with "403 Forbidden" in it; and,
+on `PATCH .../lighting`, a plain HTTP 400 whose body carries a structured
+`auth.credentials_invalid` error code. Rather than chase every status code
+SmartPoolConnect might pick next, `lib/api.js#isAuthFailure` also recognizes
+the error by its body content (`bodyIndicatesAuthFailure`), independent of
+status, and treats a match exactly like a 401 — unavailable, Repair hint, one
+notification. An error that matches neither known signature is left alone as
+a generic, transient error.
 
 A 403 with `missing_scope` on a write disables further write attempts on that
 device (reads keep working); the same status on the read itself means even

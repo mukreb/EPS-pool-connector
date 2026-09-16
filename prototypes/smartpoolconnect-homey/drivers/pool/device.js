@@ -44,6 +44,7 @@ class PoolDevice extends Homey.Device {
     await this.setStoreValue('credential', credential);
     this._createClient();
     this._poller.setClient(this.client);
+    this._poller.pollNow();
     this._writeGuard.reset();
     await resetNotified(this);
     await this.setAvailable().catch(this.error);

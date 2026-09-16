@@ -4,7 +4,7 @@ const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   SmartPoolConnectClient, ApiError, redact, tokenFromCookie, normalizeTokenInput, normalizeCredential,
-  isAuthFailure, isUpstreamAuthFailure,
+  isAuthFailure, bodyIndicatesAuthFailure,
 } = require('../lib/api');
 
 // Bouwt een connect_session-achtige waarde op: base64url(JSON) + '.' + signature,
@@ -132,7 +132,7 @@ test('401 gooit een ApiError met de status erop', async () => {
   });
 });
 
-test('500 met een oauth_api/403-afwijzing erin wordt als upstreamAuthFailure herkend', async () => {
+test('500 met een oauth_api/403-afwijzing erin wordt als auth failure herkend', async () => {
   mockFetch(() => textResponse(
     'HTTP status client error (403 Forbidden) for url (http://oauth_api:3000/e/identity)',
     { status: 500 },
@@ -142,35 +142,65 @@ test('500 met een oauth_api/403-afwijzing erin wordt als upstreamAuthFailure her
   await assert.rejects(() => client.setLighting('pid-1', true), (err) => {
     assert.ok(err instanceof ApiError);
     assert.equal(err.status, 500);
-    assert.equal(err.upstreamAuthFailure, true);
     assert.equal(isAuthFailure(err), true);
     return true;
   });
 });
 
-test('een gewone 500 (geen oauth_api/403 erin) is geen upstreamAuthFailure', async () => {
+// Geobserveerd op PATCH .../lighting: SmartPoolConnect antwoordt hier soms met
+// een kale HTTP 400 met een gestructureerde `auth.credentials_invalid`-code,
+// een derde variant naast de schone 401 en de vermomde 500 hierboven.
+test('400 met auth.credentials_invalid in de body wordt ook als auth failure herkend', async () => {
+  mockFetch(() => jsonResponse({ error: 'auth.credentials_invalid' }, { status: 400 }));
+  const client = new SmartPoolConnectClient({ credential: { type: 'key', value: 'spc_x' } });
+
+  await assert.rejects(() => client.setLighting('pid-1', true), (err) => {
+    assert.ok(err instanceof ApiError);
+    assert.equal(err.status, 400);
+    assert.equal(isAuthFailure(err), true);
+    return true;
+  });
+});
+
+test('een gewone 500 (geen oauth_api/403 erin) is geen auth failure', async () => {
   mockFetch(() => textResponse('Internal Server Error', { status: 500 }));
   const client = new SmartPoolConnectClient({ credential: { type: 'key', value: 'spc_x' } });
 
   await assert.rejects(() => client.getPool('pid-1'), (err) => {
-    assert.equal(err.upstreamAuthFailure, false);
     assert.equal(isAuthFailure(err), false);
     return true;
   });
 });
 
-test('isUpstreamAuthFailure: alleen bij status 500 mét zowel oauth_api als 403', () => {
-  const body = 'HTTP status client error (403 Forbidden) for url (http://oauth_api:3000/e/identity)';
-  assert.equal(isUpstreamAuthFailure(500, body), true);
-  assert.equal(isUpstreamAuthFailure(401, body), false);
-  assert.equal(isUpstreamAuthFailure(500, 'oauth_api zegt niets over de statuscode'), false);
-  assert.equal(isUpstreamAuthFailure(500, '403 Forbidden zonder verdere context'), false);
+// Een echte 400 die niets met auth te maken heeft (bijv. een validatiefout op
+// de request-body) mag niet per ongeluk als credential-probleem behandeld
+// worden.
+test('een gewone 400 (geen auth.credentials_invalid erin) is geen auth failure', async () => {
+  mockFetch(() => jsonResponse({ error: 'validation_error', field: 'always_active' }, { status: 400 }));
+  const client = new SmartPoolConnectClient({ credential: { type: 'key', value: 'spc_x' } });
+
+  await assert.rejects(() => client.setLighting('pid-1', true), (err) => {
+    assert.equal(isAuthFailure(err), false);
+    return true;
+  });
 });
 
-test('isAuthFailure: waar voor 401 en voor de vermomde 500, niet voor 403 of een gewone 500', () => {
+test('bodyIndicatesAuthFailure: herkent beide bekende signaturen, negeert losse termen', () => {
+  assert.equal(bodyIndicatesAuthFailure({ error: 'auth.credentials_invalid' }), true);
+  assert.equal(
+    bodyIndicatesAuthFailure('HTTP status client error (403 Forbidden) for url (http://oauth_api:3000/e/identity)'),
+    true,
+  );
+  assert.equal(bodyIndicatesAuthFailure('oauth_api zegt niets over de statuscode'), false);
+  assert.equal(bodyIndicatesAuthFailure('403 Forbidden zonder verdere context'), false);
+  assert.equal(bodyIndicatesAuthFailure({ error: 'missing_scope' }), false);
+});
+
+test('isAuthFailure: waar voor 401 en voor beide vermomde varianten, niet voor 403 of een ongerelateerde 400/500', () => {
   assert.equal(isAuthFailure(new ApiError('x', 401, {})), true);
-  assert.equal(isAuthFailure(new ApiError('x', 500, {}, { upstreamAuthFailure: true })), true);
-  assert.equal(isAuthFailure(new ApiError('x', 403, {})), false);
+  assert.equal(isAuthFailure(new ApiError('x', 500, 'oauth_api ... 403 Forbidden')), true);
+  assert.equal(isAuthFailure(new ApiError('x', 400, { error: 'auth.credentials_invalid' })), true);
+  assert.equal(isAuthFailure(new ApiError('x', 403, { error: 'missing_scope' })), false);
   assert.equal(isAuthFailure(new ApiError('x', 500, {})), false);
   assert.equal(isAuthFailure(new Error('not an ApiError')), false);
 });
