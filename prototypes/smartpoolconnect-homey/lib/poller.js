@@ -52,6 +52,15 @@ class PoolPoller {
     this.client = client;
   }
 
+  // Forceert een directe pollronde i.p.v. te wachten op de al geplande
+  // volgende ronde (tot intervalSeconds later). Gebruikt door setNewCredential()
+  // in de drie device.js-bestanden: na een repair op één device zou de storing
+  // voor alle abonnees van deze gedeelde poller (dezelfde pid) meteen opgelost
+  // moeten zijn, niet pas bij toeval bij de volgende geplande ronde.
+  pollNow() {
+    this._scheduleNext(0);
+  }
+
   setInterval(seconds) {
     const clamped = Math.max(MIN_INTERVAL_S, Math.min(MAX_INTERVAL_S, Number(seconds) || DEFAULT_INTERVAL_S));
     this.intervalSeconds = clamped;

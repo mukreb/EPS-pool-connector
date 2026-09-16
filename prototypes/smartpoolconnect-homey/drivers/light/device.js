@@ -1,7 +1,7 @@
 'use strict';
 
 const Homey = require('homey');
-const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
+const { SmartPoolConnectClient, ApiError, isAuthFailure } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
 const { notifyOnce, resetNotified } = require('../../lib/notify');
 const { lightingOn } = require('../../lib/mapping');
@@ -48,6 +48,7 @@ class LightDevice extends Homey.Device {
     await this.setStoreValue('credential', credential);
     this._createClient();
     this._poller.setClient(this.client);
+    this._poller.pollNow();
     this._writeGuard.reset();
     await resetNotified(this);
     await this.setAvailable().catch(this.error);
@@ -73,7 +74,7 @@ class LightDevice extends Homey.Device {
   }
 
   async onPoolError(err) {
-    if (err instanceof ApiError && (err.status === 401 || err.upstreamAuthFailure)) {
+    if (isAuthFailure(err)) {
       await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
       await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.credential_invalid')}`);
       return;

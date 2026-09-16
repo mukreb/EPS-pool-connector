@@ -60,38 +60,43 @@ function normalizeCredential(credential) {
   return { type: 'token', value: normalizeTokenInput(credential.value) };
 }
 
-// SmartPoolConnect's gateway antwoordt soms met een kale HTTP 500 waarvan de
-// body een Python-exceptiontekst is van een mislukte interne aanroep naar hun
-// eigen oauth_api/identity-service met "403 Forbidden" erin — in plaats van
-// die afwijzing netjes als 401 door te geven. Dat is inhoudelijk hetzelfde
-// probleem als een 401 (credential wordt door hun auth-laag geweigerd), dus
-// wordt hier gedetecteerd zodat de rest van de app het ook zo kan behandelen.
-// Zie ook de comment bij isAuthFailure() hieronder.
-const UPSTREAM_AUTH_FAILURE_RE = /oauth_api/i;
+// SmartPoolConnect gebruikt geen consistente HTTP-status voor een afgewezen
+// credential. Tot nu toe in het wild gezien, voor wat inhoudelijk steeds
+// hetzelfde probleem is:
+//  - een schone 401;
+//  - een kale HTTP 500 waarvan de body een Python-exceptiontekst is van een
+//    mislukte interne aanroep naar hun eigen oauth_api/identity-service, met
+//    "403 Forbidden" erin;
+//  - een HTTP 400 op PATCH .../lighting waarvan de body een nette,
+//    gestructureerde foutcode `auth.credentials_invalid` bevat.
+// Achter elke statuscode aanrennen die ze hier ooit nog voor verzinnen is een
+// verloren race, dus wordt naast de betrouwbare 401 ook op de inhoud van de
+// body gelet, los van de status.
+const AUTH_ERROR_BODY_PATTERNS = [
+  /auth\.credentials_invalid/i,
+  /oauth_api.*\b403\b|\b403\b.*oauth_api/is,
+];
 
-function isUpstreamAuthFailure(status, body) {
-  if (status !== 500) return false;
+function bodyIndicatesAuthFailure(body) {
   const text = typeof body === 'string' ? body : JSON.stringify(body || '');
-  return UPSTREAM_AUTH_FAILURE_RE.test(text) && /\b403\b/.test(text);
+  return AUTH_ERROR_BODY_PATTERNS.some((re) => re.test(text));
 }
 
 class ApiError extends Error {
-  constructor(message, status, body, { upstreamAuthFailure = false } = {}) {
+  constructor(message, status, body) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.body = body;
-    // Zie isUpstreamAuthFailure() hierboven: true wanneer dit een 500 is die in
-    // werkelijkheid een afgewezen credential is.
-    this.upstreamAuthFailure = upstreamAuthFailure;
   }
 }
 
 // Eén plek voor "is dit een afgewezen credential", gebruikt door
-// write-guard.js en alle drie de device.js-bestanden — dekt zowel de schone
-// 401 als de vermomde 500 hierboven.
+// write-guard.js en alle drie de device.js-bestanden — dekt de schone 401 en
+// de hierboven beschreven varianten die zich als iets anders voordoen.
 function isAuthFailure(err) {
-  return err instanceof ApiError && (err.status === 401 || err.upstreamAuthFailure);
+  if (!(err instanceof ApiError)) return false;
+  return err.status === 401 || bodyIndicatesAuthFailure(err.body);
 }
 
 class SmartPoolConnectClient {
@@ -164,9 +169,7 @@ class SmartPoolConnectClient {
         typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody),
         [this.credential.value],
       );
-      throw new ApiError(`HTTP ${res.status} on ${method} ${path}: ${safeBody}`.slice(0, 1000), res.status, responseBody, {
-        upstreamAuthFailure: isUpstreamAuthFailure(res.status, responseBody),
-      });
+      throw new ApiError(`HTTP ${res.status} on ${method} ${path}: ${safeBody}`.slice(0, 1000), res.status, responseBody);
     }
     return responseBody;
   }
@@ -232,5 +235,5 @@ module.exports = {
   normalizeTokenInput,
   normalizeCredential,
   isAuthFailure,
-  isUpstreamAuthFailure,
+  bodyIndicatesAuthFailure,
 };
