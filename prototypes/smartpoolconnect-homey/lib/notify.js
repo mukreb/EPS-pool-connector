@@ -13,11 +13,22 @@
 // de gebruiker via Repair een nieuwe credential invoert, of zodra een poll
 // weer lukt na eerder onbeschikbaar te zijn geweest (zie onPoolData in de
 // drie device.js-bestanden).
+//
+// getStoreValue() is in de Homey Apps SDK synchroon (zie ook getStoreValue-
+// gebruik in drivers/cover/driver.js en drivers/light/driver.js) — alleen
+// setStoreValue() persisteert async en geeft een Promise terug.
 const STORE_KEY = 'authNotified';
 
 async function notifyOnce(device, excerpt) {
-  const alreadyNotified = await device.getStoreValue(STORE_KEY).catch(() => false);
-  if (alreadyNotified) return;
+  if (device.getStoreValue(STORE_KEY)) return;
+  // Schrijfactie en gedeelde poller kunnen zo goed als tegelijk op dezelfde
+  // afgewezen credential stuiten, en de store-vlag wordt pas ná de (async)
+  // createNotification-aanroep gezet. Zonder deze in-memory grendel zouden
+  // beide de bovenstaande sync-check nog "niet gemeld" zien en dus allebei
+  // een melding sturen. De grendel bestaat alleen tijdens deze aanroep en
+  // hoeft dus niet te overleven (in tegenstelling tot de store-vlag hierboven).
+  if (device._notifyInFlight) return;
+  device._notifyInFlight = true;
   try {
     await device.homey.notifications.createNotification({ excerpt });
   } catch (err) {
@@ -26,6 +37,8 @@ async function notifyOnce(device, excerpt) {
     // houden.
     device.error(`Failed to create notification: ${err.message}`);
     return;
+  } finally {
+    device._notifyInFlight = false;
   }
   await device.setStoreValue(STORE_KEY, true).catch((err) => device.error(`Failed to persist notification state: ${err.message}`));
 }

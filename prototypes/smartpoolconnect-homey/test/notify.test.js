@@ -4,13 +4,17 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { notifyOnce, resetNotified } = require('../lib/notify');
 
+// getStoreValue is in de Homey Apps SDK synchroon (zie drivers/cover/driver.js
+// en drivers/light/driver.js, die het al zonder await aanroepen); deze fake
+// spiegelt dat bewust, want een async fake hier gaf eerder een vals-groene
+// testsuite terwijl notify.js in het echt crashte op device.getStoreValue(...).catch.
 function fakeDevice() {
   const excerpts = [];
   const store = {};
   return {
     excerpts,
     error: () => {},
-    getStoreValue: async (key) => store[key],
+    getStoreValue: (key) => store[key],
     setStoreValue: async (key, value) => { store[key] = value; },
     homey: {
       notifications: {
@@ -30,6 +34,15 @@ test('notifyOnce: herhaalde aanroepen sturen geen tweede notificatie', async () 
   const device = fakeDevice();
   await notifyOnce(device, 'token verlopen');
   await notifyOnce(device, 'token verlopen');
+  assert.deepEqual(device.excerpts, ['token verlopen']);
+});
+
+test('notifyOnce: twee gelijktijdige aanroepen (schrijfactie + gedeelde poller) sturen samen maar één melding', async () => {
+  const device = fakeDevice();
+  await Promise.all([
+    notifyOnce(device, 'token verlopen'),
+    notifyOnce(device, 'token verlopen'),
+  ]);
   assert.deepEqual(device.excerpts, ['token verlopen']);
 });
 

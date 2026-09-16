@@ -18,7 +18,9 @@ function fakeDevice() {
     },
     error: (err) => calls.push(['error', err]),
     setUnavailable: async (msg) => { calls.push(['setUnavailable', msg]); },
-    getStoreValue: async (key) => store[key],
+    // getStoreValue is in de Homey Apps SDK synchroon; alleen setStoreValue
+    // persisteert async. Zie het commentaar bij fakeDevice in test/notify.test.js.
+    getStoreValue: (key) => store[key],
     setStoreValue: async (key, value) => { store[key] = value; },
     getName: () => 'Pool',
   };
