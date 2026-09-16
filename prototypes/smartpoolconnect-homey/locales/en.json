@@ -4,5 +4,9 @@
     "missing_scope": "The stored credential is missing the controls:write scope, so this action is disabled. Ask for a key with pools:read and controls:write.",
     "missing_read_scope": "The stored credential has no read scope at all (pools:read, controls:read or history:read) — open Repair to enter a new API key or access token.",
     "control_not_allowed": "Cover control is turned off for this device. Enable \"Allow cover control\" in the device settings first — the cover can trap someone in the water, so this is off by default."
+  },
+  "notifications": {
+    "credential_invalid": "credential is invalid or expired. Open Repair on the device to enter a new API key or access token.",
+    "missing_read_scope": "credential has no read access. Open Repair on the device to enter a new API key or access token."
   }
 }

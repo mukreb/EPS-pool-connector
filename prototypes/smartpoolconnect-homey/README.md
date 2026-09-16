@@ -102,11 +102,24 @@ carries no readable expiry, so it can stop working at any moment.
 
 When a credential is rejected (HTTP 401), the affected device goes
 unavailable with a message pointing at **Repair**, where you paste a new key
-or token without losing the device or its flows. Because each of the three
-devices keeps its own copy of the credential (see
-[Design note](#design-note-why-three-separate-pairing-flows) below), a token
-rotation means repairing all three — one more reason to move to a permanent
-API key once SmartPoolConnect issues one.
+or token without losing the device or its flows. The app also pushes a Homey
+notification the first time this happens for a device, so you don't have to
+notice the device turned unavailable yourself — it stays quiet on every
+following failed poll until you repair the device (or it starts working
+again), so you get exactly one notification per outage instead of one per
+poll. Because each of the three devices keeps its own copy of the credential
+(see [Design note](#design-note-why-three-separate-pairing-flows) below), a
+token rotation means repairing all three — one more reason to move to a
+permanent API key once SmartPoolConnect issues one.
+
+SmartPoolConnect doesn't always return a clean 401 for a rejected credential:
+on some endpoints its gateway returns a bare HTTP 500 whose body is a raw
+exception string from a failed internal call to its own `oauth_api`/identity
+service, with "403 Forbidden" in it. `lib/api.js#isUpstreamAuthFailure`
+recognizes that specific pattern (500 status, body mentioning both
+`oauth_api` and `403`) and treats it exactly like a 401 — unavailable,
+Repair hint, one notification. A 500 that doesn't match this pattern is left
+alone as a generic, transient error.
 
 A 403 with `missing_scope` on a write disables further write attempts on that
 device (reads keep working); the same status on the read itself means even
@@ -233,6 +246,7 @@ lib/api.js                    API client: auth, rate limit, read/write, redactio
 lib/poller.js                 One shared poll per pool, with post-write refresh bursts
 lib/mapping.js                Codes → capability values, spec → capability list
 lib/write-guard.js            Shared 401/403 handling for all device writes
+lib/notify.js                 One Homey notification per credential outage, not per poll
 drivers/pool/                 Pair flow (credentials → pool list), main device
 drivers/cover/                Pairs by picking an existing pool device
 drivers/light/                Same

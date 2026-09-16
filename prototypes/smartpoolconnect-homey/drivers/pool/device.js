@@ -1,8 +1,9 @@
 'use strict';
 
 const Homey = require('homey');
-const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
+const { SmartPoolConnectClient, ApiError, isAuthFailure } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
+const { notifyOnce, resetNotified } = require('../../lib/notify');
 const mapping = require('../../lib/mapping');
 
 // Hoe lang na de laatste geziene afdekbeweging het waterniveau-alarm onderdrukt
@@ -44,6 +45,7 @@ class PoolDevice extends Homey.Device {
     this._createClient();
     this._poller.setClient(this.client);
     this._writeGuard.reset();
+    await resetNotified(this);
     await this.setAvailable().catch(this.error);
   }
 
@@ -79,7 +81,10 @@ class PoolDevice extends Homey.Device {
       } else {
         await this._applyFullState(pool);
       }
-      if (!this.getAvailable()) await this.setAvailable().catch(this.error);
+      if (!this.getAvailable()) {
+        await this.setAvailable().catch(this.error);
+        await resetNotified(this);
+      }
     } catch (err) {
       this.error(`Failed to apply pool data: ${err.message}`);
     }
@@ -204,8 +209,9 @@ class PoolDevice extends Homey.Device {
 
   // Aangeroepen door de PoolPoller bij een fout op GET /pool/{pid}.
   async onPoolError(err) {
-    if (err instanceof ApiError && err.status === 401) {
+    if (isAuthFailure(err)) {
       await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
+      await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.credential_invalid')}`);
       return;
     }
     if (err instanceof ApiError && err.status === 403) {
@@ -214,6 +220,7 @@ class PoolDevice extends Homey.Device {
       // target_temperature-write (die alleen controls:write mist en de lezende
       // kant met rust laat, afgehandeld door WriteGuard in lib/write-guard.js).
       await this.setUnavailable(this.homey.__('errors.missing_read_scope')).catch(this.error);
+      await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.missing_read_scope')}`);
       return;
     }
     this.error(`Poll failed: ${err.message}`);

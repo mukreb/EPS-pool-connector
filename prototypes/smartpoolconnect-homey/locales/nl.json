@@ -4,5 +4,9 @@
     "missing_scope": "Het opgeslagen credential mist de scope controls:write, dus deze actie is uitgeschakeld. Vraag een key aan met pools:read en controls:write.",
     "missing_read_scope": "Het opgeslagen credential heeft helemaal geen leesscope (pools:read, controls:read of history:read) — open Reparatie om een nieuwe API-key of toegangstoken in te voeren.",
     "control_not_allowed": "Bediening van de afdekking staat uit voor dit device. Zet eerst \"Bediening afdekking toestaan\" aan in de device-instellingen — de afdekking kan iemand in het water beknellen, daarom staat dit standaard uit."
+  },
+  "notifications": {
+    "credential_invalid": "credential is ongeldig of verlopen. Open Reparatie op het device om een nieuwe API-key of toegangstoken in te voeren.",
+    "missing_read_scope": "credential heeft geen leestoegang. Open Reparatie op het device om een nieuwe API-key of toegangstoken in te voeren."
   }
 }
