@@ -1,7 +1,7 @@
 'use strict';
 
 const Homey = require('homey');
-const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
+const { SmartPoolConnectClient, ApiError, isAuthFailure } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
 const { notifyOnce, resetNotified } = require('../../lib/notify');
 const mapping = require('../../lib/mapping');
@@ -209,7 +209,7 @@ class PoolDevice extends Homey.Device {
 
   // Aangeroepen door de PoolPoller bij een fout op GET /pool/{pid}.
   async onPoolError(err) {
-    if (err instanceof ApiError && err.status === 401) {
+    if (isAuthFailure(err)) {
       await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
       await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.credential_invalid')}`);
       return;

@@ -87,7 +87,7 @@ class CoverDevice extends Homey.Device {
   }
 
   async onPoolError(err) {
-    if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+    if (err instanceof ApiError && (err.status === 401 || err.status === 403 || err.upstreamAuthFailure)) {
       await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
       await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.credential_invalid')}`);
       return;

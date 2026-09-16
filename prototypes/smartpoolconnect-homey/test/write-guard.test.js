@@ -54,6 +54,36 @@ test('WriteGuard: 401 zet het device onbeschikbaar maar blokkeert schrijven niet
   ]);
 });
 
+test('WriteGuard: een 500 die intern een oauth_api/403-afwijzing bevat, telt als een afgewezen credential', async () => {
+  const device = fakeDevice();
+  const guard = new WriteGuard(device);
+
+  await assert.rejects(() => guard.run(async () => {
+    throw new ApiError(
+      'HTTP 500 on PATCH /pool/x/lighting: HTTP status client error (403 Forbidden) for url (http://oauth_api:3000/e/identity)',
+      500,
+      'HTTP status client error (403 Forbidden) for url (http://oauth_api:3000/e/identity)',
+      { upstreamAuthFailure: true },
+    );
+  }));
+  assert.equal(guard.blocked, false);
+  assert.deepEqual(device.calls, [
+    ['setUnavailable', 'errors.unauthorized'],
+    ['notify', 'Pool: notifications.credential_invalid'],
+  ]);
+});
+
+test('WriteGuard: een gewone 500 zonder upstreamAuthFailure blijft een onbehandelde fout', async () => {
+  const device = fakeDevice();
+  const guard = new WriteGuard(device);
+
+  await assert.rejects(() => guard.run(async () => {
+    throw new ApiError('boom', 500, 'Internal Server Error');
+  }));
+  assert.equal(guard.blocked, false);
+  assert.deepEqual(device.calls, []);
+});
+
 test('WriteGuard: een tweede 401 op rij stuurt geen tweede notificatie', async () => {
   const device = fakeDevice();
   const guard = new WriteGuard(device);

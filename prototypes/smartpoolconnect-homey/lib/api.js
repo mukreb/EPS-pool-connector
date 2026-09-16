@@ -60,13 +60,38 @@ function normalizeCredential(credential) {
   return { type: 'token', value: normalizeTokenInput(credential.value) };
 }
 
+// SmartPoolConnect's gateway antwoordt soms met een kale HTTP 500 waarvan de
+// body een Python-exceptiontekst is van een mislukte interne aanroep naar hun
+// eigen oauth_api/identity-service met "403 Forbidden" erin — in plaats van
+// die afwijzing netjes als 401 door te geven. Dat is inhoudelijk hetzelfde
+// probleem als een 401 (credential wordt door hun auth-laag geweigerd), dus
+// wordt hier gedetecteerd zodat de rest van de app het ook zo kan behandelen.
+// Zie ook de comment bij isAuthFailure() hieronder.
+const UPSTREAM_AUTH_FAILURE_RE = /oauth_api/i;
+
+function isUpstreamAuthFailure(status, body) {
+  if (status !== 500) return false;
+  const text = typeof body === 'string' ? body : JSON.stringify(body || '');
+  return UPSTREAM_AUTH_FAILURE_RE.test(text) && /\b403\b/.test(text);
+}
+
 class ApiError extends Error {
-  constructor(message, status, body) {
+  constructor(message, status, body, { upstreamAuthFailure = false } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.body = body;
+    // Zie isUpstreamAuthFailure() hierboven: true wanneer dit een 500 is die in
+    // werkelijkheid een afgewezen credential is.
+    this.upstreamAuthFailure = upstreamAuthFailure;
   }
+}
+
+// Eén plek voor "is dit een afgewezen credential", gebruikt door
+// write-guard.js en alle drie de device.js-bestanden — dekt zowel de schone
+// 401 als de vermomde 500 hierboven.
+function isAuthFailure(err) {
+  return err instanceof ApiError && (err.status === 401 || err.upstreamAuthFailure);
 }
 
 class SmartPoolConnectClient {
@@ -139,7 +164,9 @@ class SmartPoolConnectClient {
         typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody),
         [this.credential.value],
       );
-      throw new ApiError(`HTTP ${res.status} on ${method} ${path}: ${safeBody}`.slice(0, 1000), res.status, responseBody);
+      throw new ApiError(`HTTP ${res.status} on ${method} ${path}: ${safeBody}`.slice(0, 1000), res.status, responseBody, {
+        upstreamAuthFailure: isUpstreamAuthFailure(res.status, responseBody),
+      });
     }
     return responseBody;
   }
@@ -204,4 +231,6 @@ module.exports = {
   tokenFromCookie,
   normalizeTokenInput,
   normalizeCredential,
+  isAuthFailure,
+  isUpstreamAuthFailure,
 };

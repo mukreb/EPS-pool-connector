@@ -112,6 +112,15 @@ poll. Because each of the three devices keeps its own copy of the credential
 token rotation means repairing all three — one more reason to move to a
 permanent API key once SmartPoolConnect issues one.
 
+SmartPoolConnect doesn't always return a clean 401 for a rejected credential:
+on some endpoints its gateway returns a bare HTTP 500 whose body is a raw
+exception string from a failed internal call to its own `oauth_api`/identity
+service, with "403 Forbidden" in it. `lib/api.js#isUpstreamAuthFailure`
+recognizes that specific pattern (500 status, body mentioning both
+`oauth_api` and `403`) and treats it exactly like a 401 — unavailable,
+Repair hint, one notification. A 500 that doesn't match this pattern is left
+alone as a generic, transient error.
+
 A 403 with `missing_scope` on a write disables further write attempts on that
 device (reads keep working); the same status on the read itself means even
 `pools:read`/`controls:read`/`history:read` is missing, which takes the whole
