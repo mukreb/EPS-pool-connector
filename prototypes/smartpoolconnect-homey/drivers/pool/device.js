@@ -45,7 +45,7 @@ class PoolDevice extends Homey.Device {
     this._createClient();
     this._poller.setClient(this.client);
     this._writeGuard.reset();
-    resetNotified(this);
+    await resetNotified(this);
     await this.setAvailable().catch(this.error);
   }
 
@@ -81,7 +81,10 @@ class PoolDevice extends Homey.Device {
       } else {
         await this._applyFullState(pool);
       }
-      if (!this.getAvailable()) await this.setAvailable().catch(this.error);
+      if (!this.getAvailable()) {
+        await this.setAvailable().catch(this.error);
+        await resetNotified(this);
+      }
     } catch (err) {
       this.error(`Failed to apply pool data: ${err.message}`);
     }

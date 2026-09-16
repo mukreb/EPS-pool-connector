@@ -60,7 +60,7 @@ class CoverDevice extends Homey.Device {
     this._createClient();
     this._poller.setClient(this.client);
     this._writeGuard.reset();
-    resetNotified(this);
+    await resetNotified(this);
     await this.setAvailable().catch(this.error);
   }
 
@@ -80,7 +80,10 @@ class CoverDevice extends Homey.Device {
     const state = mapCoverStatus(raw);
     await this.setCapabilityValue('cover_state', state).catch(this.error);
     await this.setCapabilityValue('windowcoverings_state', TO_WINDOWCOVERINGS_STATE[state]).catch(this.error);
-    if (!this.getAvailable()) await this.setAvailable().catch(this.error);
+    if (!this.getAvailable()) {
+      await this.setAvailable().catch(this.error);
+      await resetNotified(this);
+    }
   }
 
   async onPoolError(err) {

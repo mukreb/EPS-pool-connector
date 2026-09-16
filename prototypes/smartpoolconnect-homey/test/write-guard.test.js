@@ -7,6 +7,7 @@ const { ApiError } = require('../lib/api');
 
 function fakeDevice() {
   const calls = [];
+  const store = {};
   return {
     calls,
     homey: {
@@ -17,6 +18,8 @@ function fakeDevice() {
     },
     error: (err) => calls.push(['error', err]),
     setUnavailable: async (msg) => { calls.push(['setUnavailable', msg]); },
+    getStoreValue: async (key) => store[key],
+    setStoreValue: async (key, value) => { store[key] = value; },
     getName: () => 'Pool',
   };
 }

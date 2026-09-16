@@ -49,7 +49,7 @@ class LightDevice extends Homey.Device {
     this._createClient();
     this._poller.setClient(this.client);
     this._writeGuard.reset();
-    resetNotified(this);
+    await resetNotified(this);
     await this.setAvailable().catch(this.error);
   }
 
@@ -66,7 +66,10 @@ class LightDevice extends Homey.Device {
   async onPoolData(pool, { limited }) {
     if (limited || !pool) return;
     await this.setCapabilityValue('onoff', lightingOn(pool)).catch(this.error);
-    if (!this.getAvailable()) await this.setAvailable().catch(this.error);
+    if (!this.getAvailable()) {
+      await this.setAvailable().catch(this.error);
+      await resetNotified(this);
+    }
   }
 
   async onPoolError(err) {
