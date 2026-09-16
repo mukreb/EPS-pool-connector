@@ -3,6 +3,7 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
+const { notifyOnce, resetNotified } = require('../../lib/notify');
 const { mapCoverStatus } = require('../../lib/mapping');
 
 // windowcoverings_state kent maar drie waarden (up/idle/down) en bedient de
@@ -59,6 +60,7 @@ class CoverDevice extends Homey.Device {
     this._createClient();
     this._poller.setClient(this.client);
     this._writeGuard.reset();
+    resetNotified(this);
     await this.setAvailable().catch(this.error);
   }
 
@@ -84,6 +86,7 @@ class CoverDevice extends Homey.Device {
   async onPoolError(err) {
     if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
       await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
+      await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.credential_invalid')}`);
       return;
     }
     this.error(`Poll failed: ${err.message}`);

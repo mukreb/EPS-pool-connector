@@ -3,6 +3,7 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
+const { notifyOnce, resetNotified } = require('../../lib/notify');
 const mapping = require('../../lib/mapping');
 
 // Hoe lang na de laatste geziene afdekbeweging het waterniveau-alarm onderdrukt
@@ -44,6 +45,7 @@ class PoolDevice extends Homey.Device {
     this._createClient();
     this._poller.setClient(this.client);
     this._writeGuard.reset();
+    resetNotified(this);
     await this.setAvailable().catch(this.error);
   }
 
@@ -206,6 +208,7 @@ class PoolDevice extends Homey.Device {
   async onPoolError(err) {
     if (err instanceof ApiError && err.status === 401) {
       await this.setUnavailable(this.homey.__('errors.unauthorized')).catch(this.error);
+      await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.credential_invalid')}`);
       return;
     }
     if (err instanceof ApiError && err.status === 403) {
@@ -214,6 +217,7 @@ class PoolDevice extends Homey.Device {
       // target_temperature-write (die alleen controls:write mist en de lezende
       // kant met rust laat, afgehandeld door WriteGuard in lib/write-guard.js).
       await this.setUnavailable(this.homey.__('errors.missing_read_scope')).catch(this.error);
+      await notifyOnce(this, `${this.getName()}: ${this.homey.__('notifications.missing_read_scope')}`);
       return;
     }
     this.error(`Poll failed: ${err.message}`);

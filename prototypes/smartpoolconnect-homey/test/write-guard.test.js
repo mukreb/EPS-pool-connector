@@ -9,9 +9,15 @@ function fakeDevice() {
   const calls = [];
   return {
     calls,
-    homey: { __: (key) => key },
+    homey: {
+      __: (key) => key,
+      notifications: {
+        createNotification: async ({ excerpt }) => { calls.push(['notify', excerpt]); },
+      },
+    },
     error: (err) => calls.push(['error', err]),
     setUnavailable: async (msg) => { calls.push(['setUnavailable', msg]); },
+    getName: () => 'Pool',
   };
 }
 
@@ -39,7 +45,25 @@ test('WriteGuard: 401 zet het device onbeschikbaar maar blokkeert schrijven niet
     throw new ApiError('unauthorized', 401, { error: 'unauthorized' });
   }));
   assert.equal(guard.blocked, false);
-  assert.deepEqual(device.calls, [['setUnavailable', 'errors.unauthorized']]);
+  assert.deepEqual(device.calls, [
+    ['setUnavailable', 'errors.unauthorized'],
+    ['notify', 'Pool: notifications.credential_invalid'],
+  ]);
+});
+
+test('WriteGuard: een tweede 401 op rij stuurt geen tweede notificatie', async () => {
+  const device = fakeDevice();
+  const guard = new WriteGuard(device);
+
+  await assert.rejects(() => guard.run(async () => {
+    throw new ApiError('unauthorized', 401, { error: 'unauthorized' });
+  }));
+  await assert.rejects(() => guard.run(async () => {
+    throw new ApiError('unauthorized', 401, { error: 'unauthorized' });
+  }));
+
+  const notifyCalls = device.calls.filter(([type]) => type === 'notify');
+  assert.equal(notifyCalls.length, 1);
 });
 
 test('WriteGuard: reset() na een geslaagde repair laat schrijven weer toe', async () => {

@@ -1,6 +1,7 @@
 'use strict';
 
 const { ApiError } = require('./api');
+const { notifyOnce } = require('./notify');
 
 // Eén foutafhandeling voor elke schrijfactie (PATCH/POST) op een device: 401
 // zet het device op onbeschikbaar met een verwijzing naar de repair-flow, 403
@@ -22,6 +23,7 @@ class WriteGuard {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         await this.device.setUnavailable(this.device.homey.__('errors.unauthorized')).catch((e) => this.device.error(e));
+        await notifyOnce(this.device, `${this.device.getName()}: ${this.device.homey.__('notifications.credential_invalid')}`);
       } else if (err instanceof ApiError && err.status === 403) {
         this.blocked = true;
       }
