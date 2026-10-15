@@ -3,7 +3,7 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError, isAuthFailure } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
-const { notifyOnce, resetNotified } = require('../../lib/notify');
+const { notifyOnce, resetNotified, reportIfStale } = require('../../lib/notify');
 const { lightingOn } = require('../../lib/mapping');
 
 class LightDevice extends Homey.Device {
@@ -89,6 +89,7 @@ class LightDevice extends Homey.Device {
       return;
     }
     this.error(`Poll failed: ${err.message}`);
+    await reportIfStale(this, this._poller, err);
   }
 }
 

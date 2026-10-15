@@ -1,6 +1,6 @@
 {
   "name": "com.mukreb.smartpoolconnect",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Homey app for reading and controlling a SmartPoolConnect pool.",
   "main": "app.js",
   "scripts": {

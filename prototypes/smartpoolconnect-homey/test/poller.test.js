@@ -64,3 +64,21 @@ test('pollNow(): na een repair (setClient + pollNow) komt de volgende ronde mete
   await scheduled[0].fn();
   assert.equal(calls, 2);
 });
+
+test('msSinceLastSuccess: loopt op bij fouten en springt terug na een geslaagde ronde', async () => {
+  const homey = fakeHomey();
+  let fail = true;
+  const client = { getPool: async () => { if (fail) throw new Error('HTTP 502'); return { spec: {} }; } };
+  const poller = new PoolPoller(homey, 'pid-1', client);
+  const start = Date.now();
+  assert.ok(poller.msSinceLastSuccess(start + 1000) <= 1000 && poller.msSinceLastSuccess(start + 1000) >= 990);
+
+  poller._lastSuccessAt = start - 2 * 60 * 60 * 1000;
+  await poller._poll();
+  assert.ok(poller.msSinceLastSuccess() >= 2 * 60 * 60 * 1000);
+
+  fail = false;
+  await poller._poll();
+  assert.ok(poller.msSinceLastSuccess() < 1000);
+  poller.destroy();
+});

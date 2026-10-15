@@ -3,7 +3,7 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError, isAuthFailure } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
-const { notifyOnce, resetNotified } = require('../../lib/notify');
+const { notifyOnce, resetNotified, reportIfStale } = require('../../lib/notify');
 const mapping = require('../../lib/mapping');
 
 // Hoe lang na de laatste geziene afdekbeweging het waterniveau-alarm onderdrukt
@@ -63,6 +63,7 @@ class PoolDevice extends Homey.Device {
   }
 
   async onDeleted() {
+    this.homey.app.forgetConnectionState(this.pid);
     this._poller.unsubscribe(this);
     this.homey.app.releasePollerIfIdle(this.pid);
   }
@@ -225,6 +226,7 @@ class PoolDevice extends Homey.Device {
       return;
     }
     this.error(`Poll failed: ${err.message}`);
+    await reportIfStale(this, this._poller, err);
   }
 }
 

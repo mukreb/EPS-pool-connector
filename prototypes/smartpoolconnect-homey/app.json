@@ -1,6 +1,6 @@
 {
   "id": "com.mukreb.smartpoolconnect",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "compatibility": ">=10.0.0",
   "sdk": 3,
   "platforms": ["local"],
@@ -164,6 +164,68 @@
         { "id": "unknown", "title": { "en": "Unknown", "nl": "Onbekend" } }
       ]
     }
+  },
+  "flow": {
+    "triggers": [
+      {
+        "id": "connection_lost",
+        "title": {
+          "en": "Connection to SmartPoolConnect lost",
+          "nl": "Verbinding met SmartPoolConnect verbroken"
+        },
+        "hint": {
+          "en": "Fires once per pool when the credential is rejected or no data has arrived for over an hour. Use it to send yourself a push notification.",
+          "nl": "Gaat één keer per zwembad af als het credential geweigerd wordt of er al meer dan een uur geen data binnenkomt. Gebruik dit om jezelf een pushbericht te sturen."
+        },
+        "tokens": [
+          {
+            "name": "device",
+            "type": "string",
+            "title": {
+              "en": "Device",
+              "nl": "Device"
+            },
+            "example": {
+              "en": "Pool",
+              "nl": "Zwembad"
+            }
+          },
+          {
+            "name": "reason",
+            "type": "string",
+            "title": {
+              "en": "Reason",
+              "nl": "Reden"
+            },
+            "example": {
+              "en": "Pool: credential is invalid or expired.",
+              "nl": "Zwembad: credential is ongeldig of verlopen."
+            }
+          }
+        ]
+      },
+      {
+        "id": "connection_restored",
+        "title": {
+          "en": "Connection to SmartPoolConnect restored",
+          "nl": "Verbinding met SmartPoolConnect hersteld"
+        },
+        "tokens": [
+          {
+            "name": "device",
+            "type": "string",
+            "title": {
+              "en": "Device",
+              "nl": "Device"
+            },
+            "example": {
+              "en": "Pool",
+              "nl": "Zwembad"
+            }
+          }
+        ]
+      }
+    ]
   },
   "drivers": [
     {

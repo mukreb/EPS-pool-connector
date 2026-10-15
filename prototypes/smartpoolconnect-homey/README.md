@@ -130,6 +130,31 @@ status, and treats a match exactly like a 401 — unavailable, Repair hint, one
 notification. An error that matches neither known signature is left alone as
 a generic, transient error.
 
+### Getting alerted
+
+The Homey notification above lands in Homey's timeline; whether it also
+reaches your phone as a push message depends on the per-app notification
+setting in the Homey app. For an alert you can't miss, the app also exposes
+two flow trigger cards:
+
+- **Connection to SmartPoolConnect lost** — fires once per pool (not once per
+  device) with a `device` and `reason` token. Wire it to *Send a push
+  notification* (or e-mail, speech, …).
+- **Connection to SmartPoolConnect restored** — fires once the pool delivers
+  data again, or right after a Repair.
+
+The "already fired" state per pool is kept in the app settings, so an app
+restart in the middle of an outage doesn't fire the card a second time.
+
+Not every outage shows up as a recognizable credential error: an unknown
+status or body from SmartPoolConnect used to be logged as a transient error
+while the devices stayed "available" with frozen values — which is how an
+outage could go unnoticed for weeks. As a safety net
+(`lib/notify.js#reportIfStale`), once the shared poller has gone **an hour
+without a single successful round**, the devices go unavailable anyway and
+the same notification and flow trigger fire. The next successful poll brings
+them back and fires the "restored" card.
+
 A 403 with `missing_scope` on a write disables further write attempts on that
 device (reads keep working); the same status on the read itself means even
 `pools:read`/`controls:read`/`history:read` is missing, which takes the whole
@@ -255,7 +280,7 @@ lib/api.js                    API client: auth, rate limit, read/write, redactio
 lib/poller.js                 One shared poll per pool, with post-write refresh bursts
 lib/mapping.js                Codes → capability values, spec → capability list
 lib/write-guard.js            Shared 401/403 handling for all device writes
-lib/notify.js                 One Homey notification per credential outage, not per poll
+lib/notify.js                 One notification + flow trigger per outage; no-data watchdog
 drivers/pool/                 Pair flow (credentials → pool list), main device
 drivers/cover/                Pairs by picking an existing pool device
 drivers/light/                Same

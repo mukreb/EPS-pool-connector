@@ -3,7 +3,7 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError, isAuthFailure } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
-const { notifyOnce, resetNotified } = require('../../lib/notify');
+const { notifyOnce, resetNotified, reportIfStale } = require('../../lib/notify');
 const { mapCoverStatus } = require('../../lib/mapping');
 
 // windowcoverings_state kent maar drie waarden (up/idle/down) en bedient de
@@ -103,6 +103,7 @@ class CoverDevice extends Homey.Device {
       return;
     }
     this.error(`Poll failed: ${err.message}`);
+    await reportIfStale(this, this._poller, err);
   }
 }
 
