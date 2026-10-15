@@ -55,9 +55,10 @@ async function notifyOnce(device, excerpt) {
 }
 
 async function resetNotified(device) {
-  if (device.getStoreValue(STORE_KEY)) {
-    await device.homey.app?.reportConnectionRestored?.(device.pid, device.getName?.());
-  }
+  // Altijd doorgeven, niet alleen als STORE_KEY gezet is: de app-vlag voor de
+  // flow kan gezet zijn terwijl de tijdlijnmelding mislukte (en STORE_KEY dus
+  // open bleef). De app ontdubbelt zelf per zwembad.
+  await device.homey.app?.reportConnectionRestored?.(device.pid, device.getName?.());
   await device.setStoreValue(STORE_KEY, false).catch((err) => device.error(`Failed to reset notification state: ${err.message}`));
 }
 

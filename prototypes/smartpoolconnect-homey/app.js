@@ -33,15 +33,26 @@ class SmartPoolConnectApp extends Homey.App {
   async reportConnectionLost(pid, deviceName, reason) {
     const lost = this.homey.settings.get(CONNECTION_LOST_KEY) || {};
     if (lost[pid]) return;
+    // Eerst vastleggen, dan triggeren: de drie devices melden vrijwel
+    // tegelijk, en pas na de (async) trigger vastleggen zou ze alle drie
+    // doorlaten. Mislukt de trigger, dan terugdraaien zodat de volgende
+    // mislukte poll het opnieuw probeert.
     lost[pid] = true;
     this.homey.settings.set(CONNECTION_LOST_KEY, lost);
-    await this._connectionLostTrigger.trigger({ device: deviceName || '', reason: reason || '' })
-      .catch((err) => this.error(`connection_lost trigger failed: ${err.message}`));
+    try {
+      await this._connectionLostTrigger.trigger({ device: deviceName || '', reason: reason || '' });
+    } catch (err) {
+      this.error(`connection_lost trigger failed: ${err.message}`);
+      this.forgetConnectionState(pid);
+    }
   }
 
   async reportConnectionRestored(pid, deviceName) {
     const lost = this.homey.settings.get(CONNECTION_LOST_KEY) || {};
     if (!lost[pid]) return;
+    // Bewust niet terugdraaien als de trigger mislukt: herstel wordt alleen
+    // gemeld bij de overgang naar beschikbaar, dus een blijvende vlag zou elke
+    // volgende "verbroken"-trigger voor dit zwembad onderdrukken.
     this.forgetConnectionState(pid);
     await this._connectionRestoredTrigger.trigger({ device: deviceName || '' })
       .catch((err) => this.error(`connection_restored trigger failed: ${err.message}`));

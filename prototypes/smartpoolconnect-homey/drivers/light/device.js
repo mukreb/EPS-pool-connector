@@ -65,12 +65,15 @@ class LightDevice extends Homey.Device {
   }
 
   async onPoolData(pool, { limited }) {
-    if (limited || !pool) return;
-    await this.setCapabilityValue('onoff', lightingOn(pool)).catch(this.error);
-    if (!this.getAvailable()) {
+    // Een geslaagde ronde is een geslaagde ronde, ook als die beperkt (v1) is:
+    // anders blijft een device dat door de no-data-watchdog onbeschikbaar ging
+    // dat voor altijd.
+    if (pool && !this.getAvailable()) {
       await this.setAvailable().catch(this.error);
       await resetNotified(this);
     }
+    if (limited || !pool) return;
+    await this.setCapabilityValue('onoff', lightingOn(pool)).catch(this.error);
   }
 
   async onPoolError(err) {

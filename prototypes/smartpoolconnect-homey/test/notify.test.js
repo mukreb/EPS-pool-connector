@@ -101,11 +101,10 @@ test('notifyOnce: meldt de uitval ook aan de app voor de flow-trigger', async ()
   assert.deepEqual(calls, [['lost', 'pid-1', 'Zwembad', 'token verlopen']]);
 });
 
-test('resetNotified: meldt herstel alleen als er eerder een uitval gemeld was', async () => {
+test('resetNotified: meldt herstel aan de app ook als de tijdlijnmelding eerder mislukte', async () => {
   const device = fakeDevice();
   const calls = withApp(device);
-  await resetNotified(device);
-  assert.deepEqual(calls, []);
+  device.homey.notifications.createNotification = async () => { throw new Error('boom'); };
 
   await notifyOnce(device, 'token verlopen');
   await resetNotified(device);
