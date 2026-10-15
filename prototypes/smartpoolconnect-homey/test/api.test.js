@@ -256,3 +256,13 @@ test('normalizeCredential: alleen het token-type wordt genormaliseerd, een key b
     { type: 'key', value: 'spc_should_not_change' },
   );
 });
+
+test('_request: elke fetch krijgt een timeout-signal, zodat een hangende verbinding de poller niet blokkeert', async () => {
+  const calls = mockFetch(() => jsonResponse({ ok: true }));
+  const client = new SmartPoolConnectClient({ credential: { type: 'key', value: 'spc_x' } });
+
+  await client.getPool('pid-1');
+
+  assert.ok(calls[0].opts.signal instanceof AbortSignal);
+  assert.equal(calls[0].opts.signal.aborted, false);
+});
