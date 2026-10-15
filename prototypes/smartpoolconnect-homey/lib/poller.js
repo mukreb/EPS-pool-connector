@@ -105,6 +105,9 @@ class PoolPoller {
     if (this._destroyed) return;
     try {
       const pool = await this.client.getPool(this.pid);
+      // Een 2xx zonder (JSON-)body is geen data: als mislukte ronde behandelen,
+      // anders houdt het de no-data-watchdog stil terwijl alle waarden bevriezen.
+      if (!pool || typeof pool !== 'object') throw new Error(`Empty pool response for ${this.pid}`);
       if (metricsLooksLive(pool)) this._metricsEverNonZero = true;
       this._lastSuccessAt = Date.now();
       this._notify('onPoolData', pool, { limited: false });

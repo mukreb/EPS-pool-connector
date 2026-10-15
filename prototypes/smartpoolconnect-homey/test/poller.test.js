@@ -101,3 +101,17 @@ test('list-fallback: zwembad niet in de lijst telt als mislukte ronde, niet als 
   assert.ok(poller.msSinceLastSuccess() >= 2 * 60 * 60 * 1000);
   poller.destroy();
 });
+
+test('_poll: een leeg 2xx-antwoord telt als mislukte ronde, niet als succes', async () => {
+  const homey = fakeHomey();
+  const poller = new PoolPoller(homey, 'pid-1', { getPool: async () => '' });
+  const errors = [];
+  poller.subscribe({ onPoolData: () => assert.fail('geen data verwacht'), onPoolError: (err) => errors.push(err) });
+  poller._lastSuccessAt = Date.now() - 2 * 60 * 60 * 1000;
+
+  await poller._poll();
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /Empty pool response/);
+  assert.ok(poller.msSinceLastSuccess() >= 2 * 60 * 60 * 1000);
+  poller.destroy();
+});
