@@ -99,6 +99,13 @@ function isAuthFailure(err) {
   return err.status === 401 || bodyIndicatesAuthFailure(err.body);
 }
 
+// Harde deadline per request, inclusief het lezen van de body (het signal
+// geldt ook voor res.text()). Zonder deadline kan een verbinding die wel
+// opent maar nooit afrondt de gedeelde poller eindeloos laten hangen: de
+// volgende ronde wordt pas in PoolPoller#_poll's finally gepland, dus dan
+// komt er ook geen fout en grijpt de no-data-watchdog (lib/notify.js) nooit in.
+const REQUEST_TIMEOUT_MS = 30 * 1000;
+
 class SmartPoolConnectClient {
   /**
    * @param {object} opts
@@ -143,7 +150,7 @@ class SmartPoolConnectClient {
 
     let res;
     try {
-      res = await fetch(url, { method, headers, body: payload });
+      res = await fetch(url, { method, headers, body: payload, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     } catch (err) {
       throw new Error(`Network error on ${method} ${path}: ${err.message}`);
     }

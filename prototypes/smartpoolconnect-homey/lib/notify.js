@@ -19,7 +19,21 @@
 // setStoreValue() persisteert async en geeft een Promise terug.
 const STORE_KEY = 'authNotified';
 
+// Zonder geslaagde poll in dit tijdvenster gaat het device alsnog onbeschikbaar
+// en volgt er een melding, ook als de fout zelf niet als credential-probleem
+// herkend wordt. Ruim boven een normale haper van de cloud of de wifi, maar
+// kort genoeg om een stille storing dezelfde dag nog op te merken.
+const STALE_AFTER_MS = 60 * 60 * 1000;
+
 async function notifyOnce(device, excerpt) {
+  // Flow-trigger los van de tijdlijnmelding: die laatste komt alleen als
+  // pushbericht op de telefoon als de gebruiker dat per app heeft aangezet,
+  // een flow kan zelf kiezen (push, e-mail, spraak). Bewust vóór de
+  // STORE_KEY-check en bij elke mislukte poll: de app ontdubbelt zelf per
+  // zwembad (één trigger voor drie devices) en draait terug als de trigger
+  // mislukt, zodat die bij de volgende poll opnieuw geprobeerd wordt — ook als
+  // de tijdlijnmelding al wél gelukt en gelatcht is.
+  await device.homey.app?.reportConnectionLost?.(device.pid, device.getName?.(), excerpt);
   if (device.getStoreValue(STORE_KEY)) return;
   // Schrijfactie en gedeelde poller kunnen zo goed als tegelijk op dezelfde
   // afgewezen credential stuiten, en de store-vlag wordt pas ná de (async)
@@ -44,7 +58,22 @@ async function notifyOnce(device, excerpt) {
 }
 
 async function resetNotified(device) {
+  // Altijd doorgeven, niet alleen als STORE_KEY gezet is: de app-vlag voor de
+  // flow kan gezet zijn terwijl de tijdlijnmelding mislukte (en STORE_KEY dus
+  // open bleef). De app ontdubbelt zelf per zwembad.
+  await device.homey.app?.reportConnectionRestored?.(device.pid, device.getName?.());
   await device.setStoreValue(STORE_KEY, false).catch((err) => device.error(`Failed to reset notification state: ${err.message}`));
 }
 
-module.exports = { notifyOnce, resetNotified };
+// Vangnet voor poll-fouten die geen herkende credential- of scopefout zijn:
+// pas na STALE_AFTER_MS zonder één geslaagde ronde onbeschikbaar + melding.
+// Geeft true terug als het device als storing gemeld is.
+async function reportIfStale(device, poller, err) {
+  if (poller.msSinceLastSuccess() < STALE_AFTER_MS) return false;
+  const message = device.homey.__('errors.no_data', { error: err.message });
+  await device.setUnavailable(message).catch(device.error);
+  await notifyOnce(device, `${device.getName()}: ${device.homey.__('notifications.no_data')}`);
+  return true;
+}
+
+module.exports = { notifyOnce, resetNotified, reportIfStale, STALE_AFTER_MS };

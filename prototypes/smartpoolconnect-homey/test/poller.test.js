@@ -64,3 +64,54 @@ test('pollNow(): na een repair (setClient + pollNow) komt de volgende ronde mete
   await scheduled[0].fn();
   assert.equal(calls, 2);
 });
+
+test('msSinceLastSuccess: loopt op bij fouten en springt terug na een geslaagde ronde', async () => {
+  const homey = fakeHomey();
+  let fail = true;
+  const client = { getPool: async () => { if (fail) throw new Error('HTTP 502'); return { spec: {} }; } };
+  const poller = new PoolPoller(homey, 'pid-1', client);
+  const start = Date.now();
+  assert.ok(poller.msSinceLastSuccess(start + 1000) <= 1000 && poller.msSinceLastSuccess(start + 1000) >= 990);
+
+  poller._lastSuccessAt = start - 2 * 60 * 60 * 1000;
+  await poller._poll();
+  assert.ok(poller.msSinceLastSuccess() >= 2 * 60 * 60 * 1000);
+
+  fail = false;
+  await poller._poll();
+  assert.ok(poller.msSinceLastSuccess() < 1000);
+  poller.destroy();
+});
+
+test('list-fallback: zwembad niet in de lijst telt als mislukte ronde, niet als succes', async () => {
+  const homey = fakeHomey();
+  const { ApiError } = require('../lib/api');
+  const client = {
+    getPool: async () => { throw new ApiError('not implemented', 501); },
+    listPools: async () => [{ pid: 'other' }],
+  };
+  const poller = new PoolPoller(homey, 'pid-1', client);
+  const errors = [];
+  poller.subscribe({ onPoolData: () => assert.fail('geen data verwacht'), onPoolError: (err) => errors.push(err) });
+  poller._lastSuccessAt = Date.now() - 2 * 60 * 60 * 1000;
+
+  await poller._poll();
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /not found in pool list/);
+  assert.ok(poller.msSinceLastSuccess() >= 2 * 60 * 60 * 1000);
+  poller.destroy();
+});
+
+test('_poll: een leeg 2xx-antwoord telt als mislukte ronde, niet als succes', async () => {
+  const homey = fakeHomey();
+  const poller = new PoolPoller(homey, 'pid-1', { getPool: async () => '' });
+  const errors = [];
+  poller.subscribe({ onPoolData: () => assert.fail('geen data verwacht'), onPoolError: (err) => errors.push(err) });
+  poller._lastSuccessAt = Date.now() - 2 * 60 * 60 * 1000;
+
+  await poller._poll();
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /Empty pool response/);
+  assert.ok(poller.msSinceLastSuccess() >= 2 * 60 * 60 * 1000);
+  poller.destroy();
+});

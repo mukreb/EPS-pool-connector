@@ -29,6 +29,17 @@ class PoolPoller {
     this._extraTimers = [];
     this._metricsEverNonZero = false;
     this._destroyed = false;
+    // Start op "nu" i.p.v. 0: na een app-herstart heeft nog geen enkele ronde
+    // kunnen slagen, en dat mag niet meteen als langdurige storing tellen.
+    this._lastSuccessAt = Date.now();
+  }
+
+  // Hoe lang geleden de laatste geslaagde pollronde was. Gebruikt door
+  // lib/notify.js#reportIfStale als vangnet voor fouten die isAuthFailure()
+  // niet herkent: die laten het device anders eindeloos "beschikbaar" staan
+  // met bevroren waarden, zonder dat iemand het merkt.
+  msSinceLastSuccess(now = Date.now()) {
+    return now - this._lastSuccessAt;
   }
 
   get metricsEverNonZero() {
@@ -94,7 +105,11 @@ class PoolPoller {
     if (this._destroyed) return;
     try {
       const pool = await this.client.getPool(this.pid);
+      // Een 2xx zonder (JSON-)body is geen data: als mislukte ronde behandelen,
+      // anders houdt het de no-data-watchdog stil terwijl alle waarden bevriezen.
+      if (!pool || typeof pool !== 'object') throw new Error(`Empty pool response for ${this.pid}`);
       if (metricsLooksLive(pool)) this._metricsEverNonZero = true;
+      this._lastSuccessAt = Date.now();
       this._notify('onPoolData', pool, { limited: false });
     } catch (err) {
       if (err instanceof ApiError && err.status === 501) {
@@ -113,6 +128,13 @@ class PoolPoller {
     try {
       const pools = await this.client.listPools();
       const summary = pools.find((p) => p.pid === this.pid) || null;
+      if (!summary) {
+        // Lijst gelukt maar dit zwembad staat er niet (meer) in: geen data,
+        // dus als mislukte ronde behandelen zodat de watchdog blijft tellen.
+        this._notify('onPoolError', new Error(`Pool ${this.pid} not found in pool list`));
+        return;
+      }
+      this._lastSuccessAt = Date.now();
       this._notify('onPoolData', summary, { limited: true });
     } catch (err) {
       this._notify('onPoolError', err);

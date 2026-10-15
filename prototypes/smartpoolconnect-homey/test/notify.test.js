@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { notifyOnce, resetNotified } = require('../lib/notify');
+const { notifyOnce, resetNotified, reportIfStale, STALE_AFTER_MS } = require('../lib/notify');
 
 // getStoreValue is in de Homey Apps SDK synchroon (zie drivers/cover/driver.js
 // en drivers/light/driver.js, die het al zonder await aanroepen); deze fake
@@ -80,4 +80,66 @@ test('notifyOnce: een fout bij createNotification wordt gelogd, niet doorgegooid
   device.homey.notifications.createNotification = async ({ excerpt }) => { device.excerpts.push(excerpt); };
   await notifyOnce(device, 'token verlopen');
   assert.deepEqual(device.excerpts, ['token verlopen']);
+});
+
+function withApp(device) {
+  const calls = [];
+  device.pid = 'pid-1';
+  device.getName = () => 'Zwembad';
+  device.homey.app = {
+    reportConnectionLost: async (...args) => { calls.push(['lost', ...args]); },
+    reportConnectionRestored: async (...args) => { calls.push(['restored', ...args]); },
+  };
+  return calls;
+}
+
+test('notifyOnce: meldt de uitval bij elke aanroep aan de app (die ontdubbelt), ook na de tijdlijnmelding', async () => {
+  const device = fakeDevice();
+  const calls = withApp(device);
+  await notifyOnce(device, 'token verlopen');
+  await notifyOnce(device, 'token verlopen');
+  assert.deepEqual(calls, [
+    ['lost', 'pid-1', 'Zwembad', 'token verlopen'],
+    ['lost', 'pid-1', 'Zwembad', 'token verlopen'],
+  ]);
+  assert.deepEqual(device.excerpts, ['token verlopen']);
+});
+
+test('resetNotified: meldt herstel aan de app ook als de tijdlijnmelding eerder mislukte', async () => {
+  const device = fakeDevice();
+  const calls = withApp(device);
+  device.homey.notifications.createNotification = async () => { throw new Error('boom'); };
+
+  await notifyOnce(device, 'token verlopen');
+  await resetNotified(device);
+  assert.deepEqual(calls.map((c) => c[0]), ['lost', 'restored']);
+});
+
+function staleDevice() {
+  const device = fakeDevice();
+  device.available = true;
+  device.unavailableMessage = null;
+  device.getName = () => 'Zwembad';
+  device.setUnavailable = async (msg) => { device.available = false; device.unavailableMessage = msg; };
+  device.homey.__ = (key, tokens) => (tokens ? `${key}:${tokens.error}` : key);
+  return device;
+}
+
+test('reportIfStale: binnen het tijdvenster blijft een onbekende fout stil', async () => {
+  const device = staleDevice();
+  const poller = { msSinceLastSuccess: () => STALE_AFTER_MS - 1 };
+  const reported = await reportIfStale(device, poller, new Error('HTTP 502'));
+  assert.equal(reported, false);
+  assert.equal(device.available, true);
+  assert.deepEqual(device.excerpts, []);
+});
+
+test('reportIfStale: na het tijdvenster onbeschikbaar en één melding, ook bij herhaalde fouten', async () => {
+  const device = staleDevice();
+  const poller = { msSinceLastSuccess: () => STALE_AFTER_MS };
+  assert.equal(await reportIfStale(device, poller, new Error('HTTP 502')), true);
+  assert.equal(await reportIfStale(device, poller, new Error('HTTP 502')), true);
+  assert.equal(device.available, false);
+  assert.equal(device.unavailableMessage, 'errors.no_data:HTTP 502');
+  assert.deepEqual(device.excerpts, ['Zwembad: notifications.no_data']);
 });

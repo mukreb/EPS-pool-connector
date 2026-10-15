@@ -3,7 +3,7 @@
 const Homey = require('homey');
 const { SmartPoolConnectClient, ApiError, isAuthFailure } = require('../../lib/api');
 const { WriteGuard } = require('../../lib/write-guard');
-const { notifyOnce, resetNotified } = require('../../lib/notify');
+const { notifyOnce, resetNotified, reportIfStale } = require('../../lib/notify');
 const { mapCoverStatus } = require('../../lib/mapping');
 
 // windowcoverings_state kent maar drie waarden (up/idle/down) en bedient de
@@ -72,19 +72,22 @@ class CoverDevice extends Homey.Device {
 
   async onDeleted() {
     this._poller.unsubscribe(this);
-    this.homey.app.releasePollerIfIdle(this.pid);
+    this.homey.app.releasePollerIfIdle(this.pid, { deleted: true });
   }
 
   async onPoolData(pool, { limited }) {
+    // Een geslaagde ronde is een geslaagde ronde, ook als die beperkt (v1) is:
+    // anders blijft een device dat door de no-data-watchdog onbeschikbaar ging
+    // dat voor altijd.
+    if (pool && !this.getAvailable()) {
+      await this.setAvailable().catch(this.error);
+      await resetNotified(this);
+    }
     if (limited || !pool) return;
     const raw = pool?.cover?.status?.status;
     const state = mapCoverStatus(raw);
     await this.setCapabilityValue('cover_state', state).catch(this.error);
     await this.setCapabilityValue('windowcoverings_state', TO_WINDOWCOVERINGS_STATE[state]).catch(this.error);
-    if (!this.getAvailable()) {
-      await this.setAvailable().catch(this.error);
-      await resetNotified(this);
-    }
   }
 
   async onPoolError(err) {
@@ -103,6 +106,7 @@ class CoverDevice extends Homey.Device {
       return;
     }
     this.error(`Poll failed: ${err.message}`);
+    await reportIfStale(this, this._poller, err);
   }
 }
 
