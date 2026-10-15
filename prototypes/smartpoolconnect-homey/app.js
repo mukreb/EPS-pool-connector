@@ -42,6 +42,8 @@ class SmartPoolConnectApp extends Homey.App {
     try {
       await this._connectionLostTrigger.trigger({ device: deviceName || '', reason: reason || '' });
     } catch (err) {
+      // Terugdraaien: lib/notify.js#notifyOnce roept dit bij elke mislukte
+      // poll aan, dus de volgende ronde probeert het opnieuw.
       this.error(`connection_lost trigger failed: ${err.message}`);
       this.forgetConnectionState(pid);
     }
@@ -58,8 +60,6 @@ class SmartPoolConnectApp extends Homey.App {
       .catch((err) => this.error(`connection_restored trigger failed: ${err.message}`));
   }
 
-  // Zwembad verwijderd tijdens een storing: niet laten hangen, anders triggert
-  // een later opnieuw gekoppeld zwembad met dezelfde pid nooit meer.
   forgetConnectionState(pid) {
     const lost = this.homey.settings.get(CONNECTION_LOST_KEY) || {};
     if (!lost[pid]) return;
@@ -67,11 +67,17 @@ class SmartPoolConnectApp extends Homey.App {
     this.homey.settings.set(CONNECTION_LOST_KEY, lost);
   }
 
-  releasePollerIfIdle(pid) {
+  // `deleted`: aangeroepen vanuit onDeleted (niet onUninit). Is het laatste
+  // device van dit zwembad verwijderd tijdens een storing, dan de flow-status
+  // vergeten, anders triggert een later opnieuw gekoppeld zwembad met dezelfde
+  // pid nooit meer. Niet bij onUninit: dan zou een app-herstart midden in een
+  // storing de trigger opnieuw laten afgaan.
+  releasePollerIfIdle(pid, { deleted = false } = {}) {
     const poller = this._pollers.get(pid);
     if (poller && poller.isIdle()) {
       poller.destroy();
       this._pollers.delete(pid);
+      if (deleted) this.forgetConnectionState(pid);
     }
   }
 }

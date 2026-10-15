@@ -63,9 +63,8 @@ class PoolDevice extends Homey.Device {
   }
 
   async onDeleted() {
-    this.homey.app.forgetConnectionState(this.pid);
     this._poller.unsubscribe(this);
-    this.homey.app.releasePollerIfIdle(this.pid);
+    this.homey.app.releasePollerIfIdle(this.pid, { deleted: true });
   }
 
   async onSettings({ newSettings, changedKeys }) {

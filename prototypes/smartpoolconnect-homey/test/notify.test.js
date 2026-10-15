@@ -93,12 +93,16 @@ function withApp(device) {
   return calls;
 }
 
-test('notifyOnce: meldt de uitval ook aan de app voor de flow-trigger', async () => {
+test('notifyOnce: meldt de uitval bij elke aanroep aan de app (die ontdubbelt), ook na de tijdlijnmelding', async () => {
   const device = fakeDevice();
   const calls = withApp(device);
   await notifyOnce(device, 'token verlopen');
   await notifyOnce(device, 'token verlopen');
-  assert.deepEqual(calls, [['lost', 'pid-1', 'Zwembad', 'token verlopen']]);
+  assert.deepEqual(calls, [
+    ['lost', 'pid-1', 'Zwembad', 'token verlopen'],
+    ['lost', 'pid-1', 'Zwembad', 'token verlopen'],
+  ]);
+  assert.deepEqual(device.excerpts, ['token verlopen']);
 });
 
 test('resetNotified: meldt herstel aan de app ook als de tijdlijnmelding eerder mislukte', async () => {

@@ -61,7 +61,7 @@ class LightDevice extends Homey.Device {
 
   async onDeleted() {
     this._poller.unsubscribe(this);
-    this.homey.app.releasePollerIfIdle(this.pid);
+    this.homey.app.releasePollerIfIdle(this.pid, { deleted: true });
   }
 
   async onPoolData(pool, { limited }) {

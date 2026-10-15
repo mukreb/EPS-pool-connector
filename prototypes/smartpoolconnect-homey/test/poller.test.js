@@ -82,3 +82,22 @@ test('msSinceLastSuccess: loopt op bij fouten en springt terug na een geslaagde 
   assert.ok(poller.msSinceLastSuccess() < 1000);
   poller.destroy();
 });
+
+test('list-fallback: zwembad niet in de lijst telt als mislukte ronde, niet als succes', async () => {
+  const homey = fakeHomey();
+  const { ApiError } = require('../lib/api');
+  const client = {
+    getPool: async () => { throw new ApiError('not implemented', 501); },
+    listPools: async () => [{ pid: 'other' }],
+  };
+  const poller = new PoolPoller(homey, 'pid-1', client);
+  const errors = [];
+  poller.subscribe({ onPoolData: () => assert.fail('geen data verwacht'), onPoolError: (err) => errors.push(err) });
+  poller._lastSuccessAt = Date.now() - 2 * 60 * 60 * 1000;
+
+  await poller._poll();
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /not found in pool list/);
+  assert.ok(poller.msSinceLastSuccess() >= 2 * 60 * 60 * 1000);
+  poller.destroy();
+});

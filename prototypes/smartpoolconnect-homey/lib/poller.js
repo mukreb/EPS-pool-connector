@@ -125,6 +125,12 @@ class PoolPoller {
     try {
       const pools = await this.client.listPools();
       const summary = pools.find((p) => p.pid === this.pid) || null;
+      if (!summary) {
+        // Lijst gelukt maar dit zwembad staat er niet (meer) in: geen data,
+        // dus als mislukte ronde behandelen zodat de watchdog blijft tellen.
+        this._notify('onPoolError', new Error(`Pool ${this.pid} not found in pool list`));
+        return;
+      }
       this._lastSuccessAt = Date.now();
       this._notify('onPoolData', summary, { limited: true });
     } catch (err) {
